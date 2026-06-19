@@ -1,0 +1,9 @@
+order_id,customer_name,address,capacity_units,priority,notes
+ORD-001,Peachtree Builders,1200 Peachtree St NE Atlanta GA 30309,64,0,Commercial — call ahead for dock access
+ORD-002,Riverside Homes,450 River Rd Macon GA 31201,48,3,Side gate code 1122
+ORD-003,Savannah Renovations,800 Bull St Savannah GA 31401,96,0,
+ORD-004,Augusta Supply Co,550 Broad St Augusta GA 30901,80,5,Rush order — deliver before noon
+ORD-005,Columbus Windows,1100 Victory Dr Columbus GA 31901,112,0,Loading dock on east side
+ORD-006,Albany Homebuilders,220 Pine Ave Albany GA 31701,56,0,
+ORD-007,Warner Robins Depot,400 Watson Blvd Warner Robins GA 31093,72,2,Trailer exchange stop — drop full trailer
+ORD-008,Athens Contractors,630 Baxter St Athens GA 30606,40,0,Residential driveway delivery
