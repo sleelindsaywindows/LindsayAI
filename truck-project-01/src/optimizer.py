@@ -194,6 +194,19 @@ def solve(
         "Distance",
     )
 
+    # Truck type restrictions — if an order specifies allowed_truck_types, forbid
+    # all incompatible vehicles from serving that node via VehicleVar constraints.
+    # OR-Tools 9.x SetAllowedVehiclesForIndex does not accept Python sequences;
+    # using VehicleVar != forbidden_vehicle constraints achieves the same result.
+    cp_solver = routing.solver()
+    for order_idx, order in enumerate(orders):
+        if order.allowed_truck_types:
+            node_index = manager.NodeToIndex(order_idx + 1)  # node 0 = depot
+            vehicle_var = routing.VehicleVar(node_index)
+            for v_idx, truck in enumerate(trucks):
+                if truck.truck_type not in order.allowed_truck_types:
+                    cp_solver.Add(vehicle_var != v_idx)
+
     # Soft constraint — allows solver to drop an order and report it rather than
     # returning no solution when fleet capacity is insufficient.
     for node in range(1, len(distance_matrix)):

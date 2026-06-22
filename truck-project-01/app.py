@@ -1,3 +1,4 @@
+import copy
 import os
 import urllib.parse
 import yaml
@@ -18,6 +19,13 @@ from src.optimizer import (
     GEOCODING_AVAILABLE,
 )
 
+try:
+    import folium
+    from streamlit_folium import st_folium
+    FOLIUM_AVAILABLE = True
+except ImportError:
+    FOLIUM_AVAILABLE = False
+
 CONFIG_PATH = Path("config.yaml")
 
 
@@ -32,7 +40,14 @@ def save_config(cfg: dict) -> None:
 
 
 def init_state():
-    defaults = {"orders": [], "pending": None, "assignments": [], "dropped": [], "uploader_key": 0}
+    defaults = {
+        "orders": [],
+        "pending": None,
+        "assignments": [],
+        "dropped": [],
+        "uploader_key": 0,
+        "auto_run_pending": False,
+    }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
@@ -104,6 +119,42 @@ def render_add_orders(cfg: dict):
     abbr = cfg["measurement"]["abbreviation"]
     unit_label = cfg["measurement"]["label"]
 
+    st.subheader("Upload CSV")
+    st.caption(
+        f"Required columns: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})  "
+        f"— optional: `priority`, `notes`"
+    )
+    uploaded = st.file_uploader(
+        "Choose file", type=["csv"],
+        key=f"uploader_{st.session_state.uploader_key}",
+        label_visibility="collapsed",
+    )
+    if uploaded:
+        df = pd.read_csv(uploaded)
+        required = {"order_id", "customer_name", "address", "capacity_units"}
+        missing = required - set(df.columns)
+        if missing:
+            st.error(f"CSV missing columns: {missing}")
+        else:
+            new_orders = [
+                Order(
+                    order_id=str(row["order_id"]),
+                    customer_name=str(row["customer_name"]),
+                    address=str(row["address"]),
+                    capacity_units=float(row["capacity_units"]),
+                    priority=0 if pd.isna(row.get("priority", 0)) else int(row.get("priority", 0)),
+                    notes="" if pd.isna(row.get("notes", "")) else str(row.get("notes", "")),
+                )
+                for _, row in df.iterrows()
+            ]
+            st.session_state.orders.extend(new_orders)
+            st.session_state.assignments = []
+            st.session_state.dropped = []
+            st.session_state.uploader_key += 1
+            st.session_state.auto_run_pending = True
+            st.rerun()
+
+    st.divider()
     st.subheader("Add via Natural Language")
     has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
     if not has_key:
@@ -164,41 +215,6 @@ def render_add_orders(cfg: dict):
             st.rerun()
 
     st.divider()
-    st.subheader("Upload CSV")
-    st.caption(
-        f"Required columns: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})  "
-        f"— optional: `priority`, `notes`"
-    )
-    uploaded = st.file_uploader(
-        "Choose file", type=["csv"],
-        key=f"uploader_{st.session_state.uploader_key}",
-        label_visibility="collapsed",
-    )
-    if uploaded:
-        df = pd.read_csv(uploaded)
-        required = {"order_id", "customer_name", "address", "capacity_units"}
-        missing = required - set(df.columns)
-        if missing:
-            st.error(f"CSV missing columns: {missing}")
-        else:
-            new_orders = [
-                Order(
-                    order_id=str(row["order_id"]),
-                    customer_name=str(row["customer_name"]),
-                    address=str(row["address"]),
-                    capacity_units=float(row["capacity_units"]),
-                    priority=0 if pd.isna(row.get("priority", 0)) else int(row.get("priority", 0)),
-                    notes="" if pd.isna(row.get("notes", "")) else str(row.get("notes", "")),
-                )
-                for _, row in df.iterrows()
-            ]
-            st.session_state.orders.extend(new_orders)
-            st.session_state.assignments = []
-            st.session_state.dropped = []
-            st.session_state.uploader_key += 1
-            st.rerun()
-
-    st.divider()
     st.subheader(f"Current Orders ({len(st.session_state.orders)})")
     if not st.session_state.orders:
         st.caption("No orders yet.")
@@ -245,6 +261,9 @@ def render_load_plan(cfg: dict):
         st.info("Add orders in the 'Add Orders' tab first.")
         return
 
+    depot_addr = cfg["depot"].get("address", "")
+    depot_coords = (33.749, -84.388)
+
     total_needed = sum(o.capacity_units for o in st.session_state.orders)
     fleet_cap = sum(t.max_capacity for t in trucks)
 
@@ -264,18 +283,33 @@ def render_load_plan(cfg: dict):
         help="Install geopy to enable: pip install geopy" if not GEOCODING_AVAILABLE else "",
     )
 
-    if st.button("Generate Load Plan", type="primary"):
-        orders_copy = [Order(**o.__dict__) for o in st.session_state.orders]
+    if st.session_state.get("auto_run_pending") and st.session_state.orders:
+        orders_copy = copy.deepcopy(st.session_state.orders)
+        errors = validate_inputs(orders_copy, trucks)
+        if not errors:
+            st.session_state.auto_run_pending = False
+            with st.spinner("Auto-optimizing routes from CSV…"):
+                assignments, dropped = solve(
+                    orders_copy, trucks, depot_coords,
+                    max_route_miles=max_route_miles,
+                    solver_time_limit=solver_time_limit,
+                )
+                st.session_state.assignments = assignments
+                st.session_state.dropped = dropped
+        else:
+            st.session_state.auto_run_pending = False
+            for e in errors:
+                st.error(e)
 
-        # Validate inputs before touching the solver
+    btn_label = "🔄 Regenerate Load Plan" if st.session_state.assignments else "Generate Load Plan"
+    if st.button(btn_label, type="primary"):
+        orders_copy = copy.deepcopy(st.session_state.orders)
+
         errors = validate_inputs(orders_copy, trucks)
         if errors:
             for e in errors:
                 st.error(e)
             return
-
-        depot_addr = cfg["depot"].get("address", "")
-        depot_coords = (33.749, -84.388)  # Atlanta default for Georgia plant
 
         if geocode_on:
             with st.spinner("Geocoding addresses…"):
@@ -288,7 +322,6 @@ def render_load_plan(cfg: dict):
                     if coords:
                         order.lat, order.lon = coords
 
-            # Pre-flight: warn about orders that may need multi-day runs
             warnings = check_route_cap(orders_copy, depot_coords, max_route_miles)
             for w in warnings:
                 st.warning(f"Multi-day route flag: {w}")
@@ -305,7 +338,45 @@ def render_load_plan(cfg: dict):
     if not st.session_state.assignments and not st.session_state.dropped:
         return
 
-    # Dropped orders banner
+    # Build plan_text once; reused by both banner and bottom download button
+    lines = ["LINDSAY WINDOWS — LOAD PLAN", "=" * 60]
+    for a in st.session_state.assignments:
+        dist_note = f"  Route: {a.route_distance_miles:.0f} mi" if a.route_distance_miles else ""
+        lines += [
+            f"\n{a.truck.name}",
+            f"Capacity: {a.total_capacity_used:.0f}/{a.truck.max_capacity:.0f} {abbr} ({a.utilization_pct:.0f}%){dist_note}",
+            "\nDELIVERY ORDER:",
+        ]
+        for stop in a.stops:
+            maps_url = "https://maps.google.com/?q=" + urllib.parse.quote(stop.order.address)
+            pri_tag = f"  [PRIORITY {stop.order.priority}]" if stop.order.priority > 0 else ""
+            lines.append(f"  Stop {stop.stop_number}: {stop.order.customer_name} | {stop.order.address} | {stop.order.capacity_units:.0f} {abbr}{pri_tag}")
+            lines.append(f"    Maps: {maps_url}")
+            if stop.order.notes:
+                lines.append(f"    Note: {stop.order.notes}")
+        lines.append("\nLOAD ORDER (load #1 first — deepest in truck):")
+        for i, stop in enumerate(a.load_sequence, 1):
+            lines.append(f"  Load {i}: {stop.order.customer_name} | {stop.order.capacity_units:.0f} {abbr}")
+
+    if st.session_state.dropped:
+        lines.append("\nUNASSIGNED ORDERS:")
+        for o in st.session_state.dropped:
+            lines.append(f"  {o.order_id}: {o.customer_name} | {o.address} | {o.capacity_units:.0f} {abbr}")
+
+    lines.append("\n" + "=" * 60)
+    plan_text = "\n".join(lines)
+
+    if st.session_state.assignments:
+        col_banner, col_dl = st.columns([3, 1])
+        col_banner.success("✅ Plan ready — would you like to export?")
+        col_dl.download_button(
+            "⬇ Export (.txt)",
+            data=plan_text,
+            file_name="load_plan.txt",
+            mime="text/plain",
+            key="banner_download",
+        )
+
     if st.session_state.dropped:
         dropped_ids = ", ".join(o.order_id for o in st.session_state.dropped)
         st.error(
@@ -345,37 +416,46 @@ def render_load_plan(cfg: dict):
                 for i, stop in enumerate(assignment.load_sequence, 1):
                     st.markdown(f"**Load {i}.** {stop.order.customer_name} — {stop.order.capacity_units:.0f} {abbr}")
 
-    # Export
+            if FOLIUM_AVAILABLE:
+                stops_with_coords = [s for s in assignment.stops if s.order.lat is not None]
+                if stops_with_coords:
+                    all_lats = [depot_coords[0]] + [s.order.lat for s in stops_with_coords]
+                    all_lons = [depot_coords[1]] + [s.order.lon for s in stops_with_coords]
+                    center = [sum(all_lats) / len(all_lats), sum(all_lons) / len(all_lons)]
+                    m = folium.Map(location=center, zoom_start=8)
+                    folium.Marker(
+                        list(depot_coords),
+                        popup="Depot (Lindsay Windows)",
+                        icon=folium.Icon(color="red", icon="star", prefix="fa"),
+                    ).add_to(m)
+                    for stop in assignment.stops:
+                        if stop.order.lat is not None:
+                            folium.Marker(
+                                [stop.order.lat, stop.order.lon],
+                                popup=f"Stop {stop.stop_number}: {stop.order.customer_name}",
+                                icon=folium.DivIcon(
+                                    html=(
+                                        f'<div style="font-size:13px;font-weight:bold;color:white;'
+                                        f'background:#1f77b4;border-radius:50%;width:26px;height:26px;'
+                                        f'text-align:center;line-height:26px;border:2px solid white;">'
+                                        f'{stop.stop_number}</div>'
+                                    ),
+                                    icon_size=(26, 26),
+                                    icon_anchor=(13, 13),
+                                ),
+                            ).add_to(m)
+                    route_pts = (
+                        [list(depot_coords)]
+                        + [[s.order.lat, s.order.lon] for s in assignment.stops if s.order.lat is not None]
+                        + [list(depot_coords)]
+                    )
+                    folium.PolyLine(route_pts, color="#1f77b4", weight=2.5, opacity=0.8).add_to(m)
+                    st_folium(m, width="100%", height=350, returned_objects=[])
+
     st.divider()
-    lines = ["LINDSAY WINDOWS — LOAD PLAN", "=" * 60]
-    for a in st.session_state.assignments:
-        dist_note = f"  Route: {a.route_distance_miles:.0f} mi" if a.route_distance_miles else ""
-        lines += [
-            f"\n{a.truck.name}",
-            f"Capacity: {a.total_capacity_used:.0f}/{a.truck.max_capacity:.0f} {abbr} ({a.utilization_pct:.0f}%){dist_note}",
-            "\nDELIVERY ORDER:",
-        ]
-        for stop in a.stops:
-            maps_url = "https://maps.google.com/?q=" + urllib.parse.quote(stop.order.address)
-            pri_tag = f"  [PRIORITY {stop.order.priority}]" if stop.order.priority > 0 else ""
-            lines.append(f"  Stop {stop.stop_number}: {stop.order.customer_name} | {stop.order.address} | {stop.order.capacity_units:.0f} {abbr}{pri_tag}")
-            lines.append(f"    Maps: {maps_url}")
-            if stop.order.notes:
-                lines.append(f"    Note: {stop.order.notes}")
-        lines.append("\nLOAD ORDER (load #1 first — deepest in truck):")
-        for i, stop in enumerate(a.load_sequence, 1):
-            lines.append(f"  Load {i}: {stop.order.customer_name} | {stop.order.capacity_units:.0f} {abbr}")
-
-    if st.session_state.dropped:
-        lines.append("\nUNASSIGNED ORDERS:")
-        for o in st.session_state.dropped:
-            lines.append(f"  {o.order_id}: {o.customer_name} | {o.address} | {o.capacity_units:.0f} {abbr}")
-
-    lines.append("\n" + "=" * 60)
-
     st.download_button(
         "⬇ Download Load Plan (.txt)",
-        data="\n".join(lines),
+        data=plan_text,
         file_name="load_plan.txt",
         mime="text/plain",
     )
@@ -391,11 +471,11 @@ def main():
 
     st.title("🪟 Lindsay Windows — Load Planner")
 
-    tab_orders, tab_plan = st.tabs(["Add Orders", "Load Plan"])
-    with tab_orders:
-        render_add_orders(cfg)
+    tab_plan, tab_orders = st.tabs(["Load Plan", "Add Orders"])
     with tab_plan:
         render_load_plan(cfg)
+    with tab_orders:
+        render_add_orders(cfg)
 
 
 if __name__ == "__main__":

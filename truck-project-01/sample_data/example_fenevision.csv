@@ -1,0 +1,7 @@
+route_id,route_description,target_ship_date,stop_number,order_number,window_width,window_height,ship_qty,max_ship_qty,ship_to_name,ship_to_street,ship_to_city,ship_to_state,ship_to_zip
+ROUTE-001,Wednesday Urban Run,2026-06-25,1,FV-001,3.5,4.0,5,6,Peachtree Builders,1200 Peachtree St NE,Atlanta,GA,30309
+ROUTE-001,Wednesday Urban Run,2026-06-25,2,FV-002,2.5,3.0,8,10,Riverside Homes,450 River Rd,Macon,GA,31201
+ROUTE-001,Wednesday Urban Run,2026-06-25,3,FV-003,4.0,5.0,6,8,Savannah Renovations,800 Bull St,Savannah,GA,31401
+ROUTE-002,Thursday Outer Ring,2026-06-26,1,FV-004,3.0,4.5,7,8,Augusta Supply Co,550 Broad St,Augusta,GA,30901
+ROUTE-002,Thursday Outer Ring,2026-06-26,2,FV-005,3.5,3.5,9,10,Columbus Windows,1100 Victory Dr,Columbus,GA,31901
+ROUTE-003,Valdosta Hub,2026-06-27,1,FV-006,2.5,2.5,10,12,Albany Homebuilders,220 Pine Ave,Albany,GA,31701

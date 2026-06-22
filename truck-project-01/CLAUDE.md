@@ -65,6 +65,8 @@ no code changes needed.
 1–N = orders. Key design decisions merged from two prior iterations:
 - `SetFixedCostOfVehicle` — higher activation penalty on 53-ft trailers so solver fills
   26-ft straight trucks before opening trailers
+- `SetAllowedVehiclesForIndex` — enforces per-order truck type restrictions
+  (e.g. homebuilder customers that physically cannot receive a 53-ft trailer)
 - `AddDimension("Distance")` — hard per-driver daily mileage cap (HOS compliance)
 - `AddDisjunction` with `UNASSIGNED_ORDER_PENALTY` — dropped orders are reported explicitly
   rather than causing a hard solver failure; `solve()` returns `(assignments, dropped)`
@@ -74,6 +76,10 @@ no code changes needed.
 
 **Models (`src/models.py`):** `Order`, `Truck`, `RouteStop`, `TruckAssignment`.
 `TruckAssignment.load_sequence` (LIFO) and `.utilization_pct` are computed properties.
+`Order.allowed_truck_types` is a list of `Truck.truck_type` strings (e.g. `["straight"]`)
+or `None` (any truck). Populated by the FeneVision importer from `TruckTypeDesc`; eventually
+will come from a customer-level lookup table once Geoff confirms which customers can't take
+53-ft trailers.
 
 ---
 
@@ -84,16 +90,37 @@ no code changes needed.
 sequence — never set independently.
 
 **Capacity math:** Windows stand upright individually, not palletized. Space scales linearly.
-- 53-ft trailer: 8 ft × 48 ft = **384 sq ft** practical (theoretical 8.25 × 52 = 429)
-- 26-ft straight: 8 ft × 22 ft = **176 sq ft** practical
+- 53-ft trailer: 8.25 ft × 52.25 ft = **431.06 sq ft** practical (from Geoff's FeneVision Trucks sheet, confirmed 2026-06-17)
+- 26-ft straight: 8.00 ft × 26.00 ft = **208 sq ft** practical (same source)
 - Screens = zero floor allocation (placed on top of windows)
+- Earlier placeholder values (384 / 176) are WRONG — do not revert
+
+**Truck type restrictions (confirmed by Geoff, 2026-06-17):** Certain customers cannot
+physically receive a 53-ft trailer — tight residential driveways, subdivision streets, etc.
+These customers always appear with `TruckTypeDesc = "GA-26' ST"` in FeneVision exports.
+Modeled as `Order.allowed_truck_types = ["straight"]`. The optimizer enforces this via
+`routing.SetAllowedVehiclesForIndex()` so the solver never assigns a restricted stop to
+a trailer. Source of truth is currently the route's TruckTypeDesc from FeneVision; a
+customer-level lookup table is the right long-term fix (pending Geoff's confirmation).
 
 **Integer scaling:** OR-Tools requires integers. Capacity × 100 (`SCALE`). Distance × 1000
 (`DISTANCE_SCALE`). These are independent.
 
-**HOS cap (`max_route_miles`):** Currently **400 miles** — this is a placeholder. Confirm
-the real number with Joseph or Geoff based on actual driver schedules before treating it as
-a hard constraint. Change via `config.yaml` → `routing.max_route_miles` or the sidebar.
+**HOS cap (`max_route_miles`):** Set to **600 miles** to accommodate NC/SC routes (e.g. BFS
+Hillsborough, Carter Lumber Columbia). Confirm real cap with Joseph — daily vs. two-day runs
+are different scheduling problems. Change via `config.yaml` → `routing.max_route_miles`.
+
+**Planning modes (Geoff confirmed, 2026-06-17):** Two distinct use cases:
+- **Pre-planning (weekly horizon):** Done days in advance. All orders known. Optimize truck
+  assignments and stop sequences across the full week's load. Accuracy over speed.
+  Optimizer should be given all orders for the week; constraint relaxation (e.g. fewer trucks)
+  is acceptable if it surfaces real-world trade-offs.
+- **Day-of (daily execution):** Morning-of routing. Some orders may have changed (adds,
+  cancels, priority bumps since pre-plan). Optimize within the already-committed truck set.
+  Speed matters — Joseph needs the output before drivers leave the dock. Consider freezing
+  vehicle assignments and only re-sequencing stops for day-of mode.
+The code does not yet distinguish these modes; document the distinction here until the UI
+supports explicit mode selection.
 
 **Geocoding:** Optional. If geopy is not installed, distances are all zero — optimizer still
 produces valid truck assignments, just unoptimized stop order. App never hard-fails without it.
@@ -109,15 +136,25 @@ order_id, customer_name, address, capacity_units, priority, notes
 `capacity_units` = floor sq ft. `priority` = 0–10. `notes` = gate codes, dock info, trailer
 exchange flag.
 
-### Real Lindsay Windows FeneVision fields (when Geoff's CSV arrives)
+### Geoff's real FeneVision xlsx export (GA Trucks format, confirmed 2026-06-17)
+
+Primary sheet: `Orders by Route`. Each row is a **line item**, not a stop — one stop has
+many rows (multiple window sizes / orders). Aggregate to stop level before feeding the optimizer.
+
+Key columns used by `import_geoffs_xlsx()`:
 ```
-route_id, route_description, target_ship_date, stop_number, order_number,
-window_width, window_height, ship_qty, max_ship_qty,
-ship_to_name, ship_to_street, ship_to_city, ship_to_state, ship_to_zip
+RouteID, RouteName, Stop               → route grouping
+shpaddr_companyname                    → customer_name
+ShpAddr_Address1/City/State/ZipCode    → address (concatenated)
+sqftShippedQty                         → capacity_units (pre-calculated by FeneVision, sum per stop)
+TruckTypeDesc                          → allowed_truck_types ("GA-26' ST" → "straight", "53' Trailer" → "trailer")
 ```
-Mapping needed: combine `ship_to_*` → `address`; compute `capacity_units` from
-`window_width × window_height × ship_qty` (sq ft per unit, windows standing upright).
-Write this mapper as `src/import_fenevision.py`.
+
+`Route Truck Summary` sheet = Joseph's actual routing ground truth for comparison.
+`Trucks` sheet = fleet definitions (capacity, cost/mile, quantity available).
+
+The MO route (`6/17 Lindsay MO 53'`) is an interplant transfer, not a customer delivery.
+Exclude it via the `exclude_routes` parameter in `import_geoffs_xlsx()`.
 
 ---
 
@@ -150,9 +187,15 @@ Invocation pattern in Claude Code: `/skill-name`
 - Solver: bin assignment + route sequencing + truck preference + HOS cap + dropped order reporting
 - UI: NL parse (two-agent), CSV upload, verification card, LIFO display, .txt export
 - Pre-flight: `validate_inputs()` + `check_route_cap()` for multi-day candidates
+- `src/import_fenevision.py`: FeneVision CSV mapper (`import_fenevision`) + Geoff's xlsx mapper (`import_geoffs_xlsx`)
+- `Order.allowed_truck_types`: per-customer truck restriction, enforced in optimizer via `SetAllowedVehiclesForIndex`
+- Real truck capacities in config (431.06 / 208 sq ft from Geoff's Trucks sheet)
+- First optimizer run against Geoff's 6/17 historical data; comparison vs Joseph's routes documented
 
 ### Next (in priority order)
-1. **Real order data** — write `src/import_fenevision.py` field mapper; validate sq ft math
+1. **Customer truck restriction lookup table** — currently derived from route's TruckTypeDesc;
+   needs a per-customer table (Geoff to confirm) so restrictions hold even when a customer
+   appears on a new route or is entered via NL/CSV upload
 2. **Real driving distances** — swap `_haversine_miles` in `_build_distance_matrix` for OSRM
    (free) or Google Maps Distance Matrix API (~$5/1000 pairs). Nothing else changes.
 3. **Driver-ready output** — Google Maps multi-stop URL per truck; CSV summary for dispatcher

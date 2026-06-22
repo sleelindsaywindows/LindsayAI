@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List
 
 
 @dataclass
@@ -12,6 +12,11 @@ class Order:
     notes: str = ""
     lat: Optional[float] = None
     lon: Optional[float] = None
+    # Truck type restriction — list of Truck.truck_type values this customer accepts.
+    # None means any truck type is allowed. Set from FeneVision TruckTypeDesc or
+    # a future customer-level lookup table.
+    # Example: ["straight"] means only 26-ft straight trucks; ["trailer"] means only 53-ft.
+    allowed_truck_types: Optional[List[str]] = None
 
 
 @dataclass

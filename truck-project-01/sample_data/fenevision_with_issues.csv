@@ -1,0 +1,6 @@
+route_id,route_description,target_ship_date,stop_number,order_number,window_width,window_height,ship_qty,max_ship_qty,ship_to_name,ship_to_street,ship_to_city,ship_to_state,ship_to_zip
+ROUTE-001,Good order,2026-06-25,1,GOOD-001,3.5,4.0,5,6,Customer A,123 Main St,Atlanta,GA,30309
+ROUTE-001,Missing width,2026-06-25,2,BAD-001,,4.0,5,6,Customer B,456 Oak Ave,Macon,GA,31201
+ROUTE-001,Zero height,2026-06-25,3,BAD-002,3.0,0,5,6,Customer C,789 Elm St,Savannah,GA,31401
+ROUTE-001,Negative qty,2026-06-25,4,BAD-003,3.0,4.0,-5,6,Customer D,321 Pine Rd,Augusta,GA,30901
+ROUTE-001,Partial address,2026-06-25,5,PARTIAL-001,3.0,4.0,5,6,Customer E,123 Some St,Athens,GA,30606

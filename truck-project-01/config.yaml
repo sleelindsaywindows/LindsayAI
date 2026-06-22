@@ -3,28 +3,99 @@ measurement:
   label: square feet
   abbreviation: sq ft
 
-# Practical floor capacities — theoretical minus door clearance and wall positioning.
-# 53-ft trailer:  8 ft wide × 48 ft usable depth = 384 sq ft  (theoretical: 8.25 × 52 = 429)
-# 26-ft straight: 8 ft wide × 22 ft usable depth = 176 sq ft
-# Screens are placed on top of windows → zero floor allocation (revisit if screen volume grows).
+# Practical floor capacities from Geoff's FeneVision Trucks sheet (confirmed 2026-06-17).
+# 53-ft trailer:  8.25 ft × 52.25 ft = 431.06 sq ft  (FeneVision TruckType 11)
+# 26-ft straight: 8.00 ft × 26.00 ft = 208.00 sq ft  (FeneVision TruckType 14)
+# Screens are placed on top of windows → zero floor allocation.
 trucks:
-  - name: 26ft Straight Truck
+  - name: 26ft Straight #1
     type: straight
-    max_capacity: 176.0
+    max_capacity: 208.0
     fixed_cost: 5.0      # activation penalty in equivalent miles (keep small trucks preferred)
-    cost_per_mile: 1.50  # $/mile placeholder for future cost-objective layer
+    cost_per_mile: 1.75  # $/mile from FeneVision Trucks sheet
 
-  - name: 53ft Trailer
+  - name: 26ft Straight #2
+    type: straight
+    max_capacity: 208.0
+    fixed_cost: 5.0
+    cost_per_mile: 1.75
+
+  - name: 26ft Straight #3
+    type: straight
+    max_capacity: 208.0
+    fixed_cost: 5.0
+    cost_per_mile: 1.75
+
+  - name: 26ft Straight #4
+    type: straight
+    max_capacity: 208.0
+    fixed_cost: 5.0
+    cost_per_mile: 1.75
+
+  - name: 26ft Straight #5
+    type: straight
+    max_capacity: 208.0
+    fixed_cost: 5.0
+    cost_per_mile: 1.75
+
+  - name: 26ft Straight #6
+    type: straight
+    max_capacity: 208.0
+    fixed_cost: 5.0
+    cost_per_mile: 1.75
+
+  - name: 26ft Straight #7
+    type: straight
+    max_capacity: 208.0
+    fixed_cost: 5.0
+    cost_per_mile: 1.75
+
+  - name: 26ft Straight #8
+    type: straight
+    max_capacity: 208.0
+    fixed_cost: 5.0
+    cost_per_mile: 1.75
+
+  - name: 26ft Straight #9
+    type: straight
+    max_capacity: 208.0
+    fixed_cost: 5.0
+    cost_per_mile: 1.75
+
+  - name: 26ft Straight #10
+    type: straight
+    max_capacity: 208.0
+    fixed_cost: 5.0
+    cost_per_mile: 1.75
+
+  - name: 53ft Trailer #1
     type: trailer
-    max_capacity: 384.0
+    max_capacity: 431.06
     fixed_cost: 20.0     # higher penalty — solver fills straight trucks before activating trailer
-    cost_per_mile: 1.75  # $/mile placeholder
+    cost_per_mile: 1.50  # $/mile from FeneVision Trucks sheet
+
+  - name: 53ft Trailer #2
+    type: trailer
+    max_capacity: 431.06
+    fixed_cost: 20.0
+    cost_per_mile: 1.50
+
+  - name: 53ft Trailer #3
+    type: trailer
+    max_capacity: 431.06
+    fixed_cost: 20.0
+    cost_per_mile: 1.50
+
+  - name: 53ft Trailer #4
+    type: trailer
+    max_capacity: 431.06
+    fixed_cost: 20.0
+    cost_per_mile: 1.50
 
 depot:
   name: Lindsay Windows — Georgia Plant
   address: ""   # fill in with actual plant address for geocoded distance routing
 
 routing:
-  max_route_miles: 400          # hard per-driver daily cap (HOS compliance)
-                                # NC/VA multi-day runs need separate scheduling logic
-  solver_time_limit_seconds: 15
+  max_route_miles: 600          # extended for NC/SC routes; confirm real HOS cap with Joseph
+  solver_time_limit_seconds: 30
