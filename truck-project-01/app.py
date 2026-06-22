@@ -461,6 +461,149 @@ def render_load_plan(cfg: dict):
     )
 
 
+
+def render_analysis(cfg: dict):
+    if not st.session_state.assignments:
+        st.info("Run the optimizer in the Load Plan tab first.")
+        return
+
+    assignments = st.session_state.assignments
+    dropped = st.session_state.dropped
+    orders = st.session_state.orders
+
+    abbr = cfg["measurement"]["abbreviation"]
+    has_miles = any(a.route_distance_miles for a in assignments)
+
+    # --- Summary table ---
+    st.subheader("Summary")
+    summary_rows = []
+    for a in assignments:
+        miles = a.route_distance_miles if a.route_distance_miles else 0.0
+        cost = miles * a.truck.cost_per_mile if miles else None
+        summary_rows.append({
+            "Truck": a.truck.name,
+            "Type": a.truck.truck_type,
+            "Stops": len(a.stops),
+            f"Sq Ft Used": round(a.total_capacity_used, 1),
+            f"Capacity ({abbr})": round(a.truck.max_capacity, 1),
+            "Utilization %": round(a.utilization_pct, 1),
+            "Est. Miles": round(miles, 1) if miles else "N/A",
+            "Est. Cost ($)": round(cost, 2) if cost is not None else "N/A",
+        })
+    st.dataframe(pd.DataFrame(summary_rows), use_container_width=True)
+
+    # --- Utilization bar chart ---
+    st.subheader("Utilization % per Truck")
+    chart_data = pd.DataFrame(
+        {"Utilization %": [a.utilization_pct for a in assignments]},
+        index=[a.truck.name for a in assignments],
+    )
+    st.bar_chart(chart_data)
+
+    if not has_miles:
+        st.caption("Mileage estimates require geocoding — enable in Load Plan tab.")
+
+    st.divider()
+
+    # --- Constraint audit ---
+    st.subheader("Homebuilder Truck-Type Constraint Audit")
+    restricted = [
+        (a, stop)
+        for a in assignments
+        for stop in a.stops
+        if stop.order.allowed_truck_types
+    ]
+    if not restricted:
+        st.caption("No homebuilder (truck-restricted) stops in current plan.")
+    else:
+        audit_rows = []
+        fail_count = 0
+        for a, stop in restricted:
+            o = stop.order
+            passed = a.truck.truck_type in o.allowed_truck_types
+            if not passed:
+                fail_count += 1
+            audit_rows.append({
+                "Order ID": o.order_id,
+                "Customer": o.customer_name,
+                "Assigned Truck": a.truck.name,
+                "Truck Type": a.truck.truck_type,
+                "Restriction": ", ".join(o.allowed_truck_types),
+                "Result": "PASS" if passed else "FAIL",
+            })
+        audit_df = pd.DataFrame(audit_rows)
+
+        def _highlight_result(row):
+            color = "background-color: #ccffcc" if row["Result"] == "PASS" else "background-color: #ff9999"
+            return [color] * len(row)
+
+        st.dataframe(
+            audit_df.style.apply(_highlight_result, axis=1),
+            use_container_width=True,
+        )
+        if fail_count:
+            st.error(f"{fail_count} homebuilder constraint violation(s) — check assignments above.")
+        else:
+            st.success(f"All {len(restricted)} homebuilder stops passed the truck-type constraint.")
+
+    st.divider()
+
+    # --- Cost comparison ---
+    st.subheader("Cost Comparison")
+    total_miles = sum(a.route_distance_miles for a in assignments if a.route_distance_miles)
+    total_cost = sum(
+        a.route_distance_miles * a.truck.cost_per_mile
+        for a in assignments
+        if a.route_distance_miles
+    )
+    util_values = [a.utilization_pct for a in assignments]
+    avg_util = round(sum(util_values) / len(util_values), 1) if util_values else 0.0
+
+    comp_rows = [
+        {"Metric": "Trucks Used", "Optimizer": len(assignments), "Joseph's Manual": 13},
+        {"Metric": "Total Est. Miles", "Optimizer": round(total_miles, 1) if has_miles else "N/A", "Joseph's Manual": "unknown"},
+        {"Metric": "Total Est. Cost ($)", "Optimizer": round(total_cost, 2) if has_miles else "N/A", "Joseph's Manual": "unknown"},
+        {"Metric": "Avg Utilization %", "Optimizer": avg_util, "Joseph's Manual": "unknown"},
+        {"Metric": "Dropped Orders", "Optimizer": len(dropped), "Joseph's Manual": "unknown"},
+    ]
+    st.dataframe(pd.DataFrame(comp_rows), use_container_width=True)
+    st.caption("Joseph's manual cost computable once his 6/17 route sheet is entered.")
+
+    st.divider()
+
+    # --- Excel export ---
+    st.subheader("Export to Excel")
+    import tempfile, os
+    from src.analysis import generate_report
+
+    if st.button("Generate Excel Report"):
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            generate_report(
+                assignments=assignments,
+                dropped=dropped,
+                orders=orders,
+                output_path=tmp_path,
+            )
+            with open(tmp_path, "rb") as f:
+                st.session_state["analysis_xlsx_bytes"] = f.read()
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+    if st.session_state.get("analysis_xlsx_bytes"):
+        st.download_button(
+            "⬇ Download lindsay_analysis.xlsx",
+            data=st.session_state["analysis_xlsx_bytes"],
+            file_name="lindsay_analysis.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="analysis_download",
+        )
+
+
 def main():
     st.set_page_config(page_title="Lindsay Windows — Load Planner", page_icon="🪟", layout="wide")
     init_state()
@@ -471,11 +614,13 @@ def main():
 
     st.title("🪟 Lindsay Windows — Load Planner")
 
-    tab_plan, tab_orders = st.tabs(["Load Plan", "Add Orders"])
+    tab_plan, tab_orders, tab_analysis = st.tabs(["Load Plan", "Add Orders", "Analysis"])
     with tab_plan:
         render_load_plan(cfg)
     with tab_orders:
         render_add_orders(cfg)
+    with tab_analysis:
+        render_analysis(cfg)
 
 
 if __name__ == "__main__":
