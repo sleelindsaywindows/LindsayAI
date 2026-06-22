@@ -1,6 +1,6 @@
 # Lindsay Windows — Truck Route Optimizer
 
-Assigns customer window orders to delivery trucks and sequences stops. Built for the Georgia plant to compare against Joseph's manual routes.
+Assigns customer window orders to delivery trucks and sequences stops. Configurable per plant — the depot address and truck fleet are set in config.yaml, so the same app runs for any Lindsay Windows location. Initial pilot is the Georgia plant.
 
 ---
 
@@ -61,6 +61,8 @@ CSV format required: order_id, customer_name, address, capacity_units, priority,
 ## Fleet and Depot Config
 
 Truck names, capacities, and the depot address are all editable in the sidebar without touching any code. Changes save to config.yaml automatically.
+
+To set up a new plant, update the depot address in the sidebar to that location's warehouse address. The truck fleet can be adjusted to match whatever that plant is running. No code changes needed.
 
 ---
 
