@@ -1,0 +1,7 @@
+order_id,customer_name,address,capacity_units,priority,notes
+FV-001,Peachtree Builders,1200 Peachtree St NE Atlanta GA 30309,70.0,0,Route: Wednesday Urban Run | Target ship: 2026-06-25
+FV-002,Riverside Homes,450 River Rd Macon GA 31201,60.0,0,Route: Wednesday Urban Run | Target ship: 2026-06-25
+FV-003,Savannah Renovations,800 Bull St Savannah GA 31401,120.0,0,Route: Wednesday Urban Run | Target ship: 2026-06-25
+FV-004,Augusta Supply Co,550 Broad St Augusta GA 30901,94.5,0,Route: Thursday Outer Ring | Target ship: 2026-06-26
+FV-005,Columbus Windows,1100 Victory Dr Columbus GA 31901,110.25,0,Route: Thursday Outer Ring | Target ship: 2026-06-26
+FV-006,Albany Homebuilders,220 Pine Ave Albany GA 31701,62.5,0,Route: Valdosta Hub | Target ship: 2026-06-27

@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Streamlit App",
+      "runtimeExecutable": "/Library/Developer/CommandLineTools/usr/bin/python3",
+      "runtimeArgs": ["-s", "/tmp/launch_streamlit.py"],
+      "port": 8501,
+      "autoPort": true
+    }
+  ]
+}
