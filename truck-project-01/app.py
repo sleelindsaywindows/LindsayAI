@@ -626,11 +626,12 @@ def main():
 
     st.title("🪟 Lindsay Windows — Load Planner")
 
-    tab_plan, tab_orders, tab_analysis = st.tabs(["Load Plan", "Add Orders", "Analysis"])
-    with tab_plan:
-        render_load_plan(cfg)
+    plan_label = "Load Plan ✓" if st.session_state.assignments else "Load Plan"
+    tab_orders, tab_plan, tab_analysis = st.tabs(["Add Orders", plan_label, "Analysis"])
     with tab_orders:
         render_add_orders(cfg)
+    with tab_plan:
+        render_load_plan(cfg)
     with tab_analysis:
         render_analysis(cfg)
 
