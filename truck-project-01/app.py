@@ -9,8 +9,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import datetime
 from src.models import Order, Truck
 from src.parser import parse_and_verify
+from src.import_fenevision import import_fenevision_xlsx
+from src.export_html import generate_html_routes
 from src.optimizer import (
     solve,
     validate_inputs,
@@ -129,6 +132,39 @@ def render_add_orders(cfg: dict):
     abbr = cfg["measurement"]["abbreviation"]
     unit_label = cfg["measurement"]["label"]
 
+    st.subheader("Import from FeneVision")
+    st.caption("Upload the xlsx export from FeneVision (GA Trucks format — 'Orders by Route' sheet).")
+    fv_file = st.file_uploader(
+        "Choose FeneVision xlsx",
+        type=["xlsx"],
+        key=f"fv_uploader_{st.session_state.uploader_key}",
+        label_visibility="collapsed",
+    )
+    if fv_file is not None:
+        exclude_patterns = cfg.get("routing", {}).get("exclude_route_patterns", [])
+        try:
+            with st.spinner("Reading FeneVision file…"):
+                new_orders, skipped, excluded = import_fenevision_xlsx(
+                    fv_file,
+                    exclude_route_patterns=exclude_patterns,
+                )
+        except Exception as e:
+            st.error(f"Could not read FeneVision file: {e}")
+        else:
+            st.session_state.orders = new_orders
+            st.session_state.assignments = []
+            st.session_state.dropped = []
+            st.session_state.uploader_key += 1
+            st.session_state.auto_run_pending = True
+            msg = f"Loaded {len(new_orders)} stops from FeneVision."
+            if excluded:
+                msg += f" {len(excluded)} route(s) excluded by pattern filter."
+            if skipped:
+                msg += f" {len(skipped)} placeholder stop(s) skipped (sqft below threshold)."
+            st.success(msg)
+            st.rerun()
+
+    st.divider()
     st.subheader("Upload CSV")
     st.caption(
         f"Required columns: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})  "
