@@ -1,6 +1,5 @@
 import copy
 import os
-import urllib.parse
 import yaml
 import streamlit as st
 import pandas as pd
@@ -9,8 +8,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import datetime
 from src.models import Order, Truck
 from src.parser import parse_and_verify
+from src.import_fenevision import import_fenevision_xlsx
+from src.export_html import generate_html_routes
 from src.optimizer import (
     solve,
     validate_inputs,
@@ -27,6 +29,51 @@ except ImportError:
     FOLIUM_AVAILABLE = False
 
 CONFIG_PATH = Path("config.yaml")
+
+_SOLVE_ANIMATION_HTML = """
+<div style="text-align:center;padding:2.5rem 0;font-family:Arial,sans-serif;">
+  <svg width="72" height="72" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg"
+       style="display:block;margin:0 auto 1.25rem;">
+    <style>
+      @keyframes _fp{0%,100%{opacity:.2}50%{opacity:.9}}
+      .wp{fill:#c8e6f7;animation:_fp 2.5s ease-in-out infinite;}
+      .wf{fill:none;stroke:#1a5fa8;stroke-width:3;}
+      .wb{stroke:#1a5fa8;stroke-width:2;}
+    </style>
+    <rect class="wf" x="10" y="10" width="60" height="60" rx="3"/>
+    <rect class="wp" x="14" y="14" width="24" height="24" style="animation-delay:0s"/>
+    <rect class="wp" x="42" y="14" width="24" height="24" style="animation-delay:.35s"/>
+    <rect class="wp" x="14" y="42" width="24" height="24" style="animation-delay:.7s"/>
+    <rect class="wp" x="42" y="42" width="24" height="24" style="animation-delay:1.05s"/>
+    <line class="wb" x1="40" y1="10" x2="40" y2="70"/>
+    <line class="wb" x1="10" y1="40" x2="70" y2="40"/>
+  </svg>
+  <div style="position:relative;height:1.8rem;overflow:hidden;">
+    <style>
+      @keyframes _m1{0%{opacity:0}3%{opacity:1}17%{opacity:1}20%{opacity:0}100%{opacity:0}}
+      @keyframes _m2{0%,20%{opacity:0}23%{opacity:1}37%{opacity:1}40%{opacity:0}100%{opacity:0}}
+      @keyframes _m3{0%,40%{opacity:0}43%{opacity:1}57%{opacity:1}60%{opacity:0}100%{opacity:0}}
+      @keyframes _m4{0%,60%{opacity:0}63%{opacity:1}77%{opacity:1}80%{opacity:0}100%{opacity:0}}
+      @keyframes _m5{0%,80%{opacity:0}83%{opacity:1}97%{opacity:1}100%{opacity:0}}
+      .sm{position:absolute;width:100%;text-align:center;font-size:.95rem;color:#555;
+          animation-duration:20s;animation-iteration-count:infinite;animation-fill-mode:both;}
+    </style>
+    <p class="sm" style="animation-name:_m1">Reading stops across your routes…</p>
+    <p class="sm" style="animation-name:_m2">Checking homebuilder truck restrictions…</p>
+    <p class="sm" style="animation-name:_m3">Assigning stops to trucks…</p>
+    <p class="sm" style="animation-name:_m4">Sequencing delivery stops by distance…</p>
+    <p class="sm" style="animation-name:_m5">Building LIFO load order…</p>
+  </div>
+</div>
+"""
+
+_SOLVE_DONE_HTML = """
+<div style="text-align:center;padding:1.5rem 0;font-family:Arial,sans-serif;
+            color:#1a7a1a;font-size:1rem;">
+  &#10003; Routes are ready &mdash; head to the <strong>Load Plan</strong> tab
+  to see assignments and export for drivers.
+</div>
+"""
 
 
 def load_config() -> dict:
@@ -47,10 +94,107 @@ def init_state():
         "dropped": [],
         "uploader_key": 0,
         "auto_run_pending": False,
+        "first_visit": True,     # drives one-time onboarding modal
+        "onboarding_slide": 0,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+
+@st.dialog("🪟 Lindsay Windows Load Planner", width="large")
+def _onboarding_modal():
+    slides = [
+        (
+            "👋 Welcome!",
+            "#1a5fa8",
+            "This tool takes your FeneVision delivery data and builds an optimized load plan "
+            "for each truck — automatically. It sequences stops, enforces truck restrictions "
+            "for homebuilder customers, and prints route sheets drivers can scan with their phone.",
+        ),
+        (
+            "📂 Upload your FeneVision file",
+            "#2e7d32",
+            "Go to **Add Orders** and upload the xlsx export from FeneVision (GA Trucks format). "
+            "The tool reads the 'Orders by Route' sheet, groups line items into stops, and "
+            "loads them automatically. Interplant routes are excluded based on your config.",
+        ),
+        (
+            "🗺️ Review the Load Plan",
+            "#6a1b9a",
+            "Head to **Load Plan** — it runs automatically after upload. "
+            "You'll see each truck's delivery sequence and LIFO loading order. "
+            "Click **Regenerate Load Plan** anytime to re-run with updated settings.",
+        ),
+        (
+            "📊 Check the Analysis tab",
+            "#e65100",
+            "**Analysis** shows utilization per truck, a homebuilder constraint audit "
+            "(flags any stop assigned to the wrong truck type), and a cost comparison "
+            "against Joseph's manual routes. Export an Excel report from here.",
+        ),
+        (
+            "🖨️ Print for drivers",
+            "#1565c0",
+            "Click **Export Route Sheets (HTML)** in the Load Plan tab and open it in your browser. "
+            "Hit **Cmd+P** to print — each truck gets its own page.\n\n"
+            "**Morning dispatch workflow:**\n"
+            "1. Open the app → upload today's FeneVision file\n"
+            "2. Wait ~30 seconds for the optimizer to run\n"
+            "3. Export route sheets → print one page per driver\n"
+            "4. Drivers scan the QR code to open their full route in Google Maps\n"
+            "5. Hand sheets to drivers before they leave the dock",
+        ),
+    ]
+
+    idx = st.session_state.get("onboarding_slide", 0)
+    title, accent, body = slides[idx]
+
+    # Progress dots
+    dots = "".join(
+        f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+        f'background:{"' + accent + '" if i == idx else "#dde3ea"};margin:0 5px;'
+        f'transition:background 0.3s;"></span>'
+        for i in range(len(slides))
+    )
+
+    st.markdown(
+        f"""
+        <div style="background:linear-gradient(135deg,{accent}18,{accent}08);
+                    border-left:4px solid {accent};border-radius:8px;
+                    padding:18px 20px;margin-bottom:16px;">
+            <div style="font-size:1.35rem;font-weight:700;color:{accent};
+                        margin-bottom:4px;">{title}</div>
+            <div style="color:#444;margin-top:2px;font-size:0.8rem;letter-spacing:0.5px;">
+                STEP {idx + 1} OF {len(slides)}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(body)
+
+    st.markdown(
+        f'<div style="text-align:center;margin-top:20px;margin-bottom:4px;">{dots}</div>',
+        unsafe_allow_html=True,
+    )
+
+    col_back, col_spacer, col_next = st.columns([1, 3, 1])
+    if idx > 0:
+        if col_back.button("← Back", key="ob_back"):
+            st.session_state.onboarding_slide = idx - 1
+            st.rerun()
+    if idx < len(slides) - 1:
+        if col_next.button("Next →", key="ob_next", type="primary"):
+            st.session_state.onboarding_slide = idx + 1
+            st.rerun()
+    else:
+        if col_next.button("Got it!", type="primary", key="ob_done"):
+            st.session_state.first_visit = False
+            st.session_state.onboarding_slide = 0
+            st.session_state._jump_orders = True
+            st.rerun()
 
 
 def render_sidebar(cfg: dict) -> dict:
@@ -96,7 +240,11 @@ def render_sidebar(cfg: dict) -> dict:
             "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
             "trucks": updated_trucks + [{"name": "New Truck", "type": "straight", "max_capacity": 176.0, "fixed_cost": 5.0, "cost_per_mile": 0.0}],
             "depot": {"name": depot_name, "address": depot_addr},
-            "routing": {"max_route_miles": max_miles, "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15)},
+            "routing": {
+                "max_route_miles": max_miles,
+                "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
+                "exclude_route_patterns": routing.get("exclude_route_patterns", []),
+            },
         }
         save_config(new_cfg)
         st.rerun()
@@ -106,10 +254,20 @@ def render_sidebar(cfg: dict) -> dict:
             "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
             "trucks": updated_trucks,
             "depot": {"name": depot_name, "address": depot_addr},
-            "routing": {"max_route_miles": max_miles, "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15)},
+            "routing": {
+                "max_route_miles": max_miles,
+                "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
+                "exclude_route_patterns": routing.get("exclude_route_patterns", []),
+            },
         }
         save_config(new_cfg)
         st.sidebar.success("Saved.")
+        st.rerun()
+
+    st.sidebar.divider()
+    if st.sidebar.button("Need Help?", use_container_width=True):
+        st.session_state.first_visit = True
+        st.session_state.onboarding_slide = 0
         st.rerun()
 
     return cfg
@@ -119,6 +277,39 @@ def render_add_orders(cfg: dict):
     abbr = cfg["measurement"]["abbreviation"]
     unit_label = cfg["measurement"]["label"]
 
+    st.subheader("Import from FeneVision")
+    st.caption("Upload the xlsx export from FeneVision (GA Trucks format — 'Orders by Route' sheet).")
+    fv_file = st.file_uploader(
+        "Choose FeneVision xlsx",
+        type=["xlsx"],
+        key=f"fv_uploader_{st.session_state.uploader_key}",
+        label_visibility="collapsed",
+    )
+    if fv_file is not None:
+        exclude_patterns = cfg.get("routing", {}).get("exclude_route_patterns", [])
+        try:
+            with st.spinner("Reading FeneVision file…"):
+                new_orders, skipped, excluded = import_fenevision_xlsx(
+                    fv_file,
+                    exclude_route_patterns=exclude_patterns,
+                )
+        except Exception as e:
+            st.error(f"Could not read FeneVision file: {e}")
+        else:
+            st.session_state.orders = new_orders
+            st.session_state.assignments = []
+            st.session_state.dropped = []
+            st.session_state.uploader_key += 1
+            st.session_state.auto_run_pending = True
+            msg = f"Loaded {len(new_orders)} stops from FeneVision."
+            if excluded:
+                msg += f" {len(excluded)} route(s) excluded by pattern filter."
+            if skipped:
+                msg += f" {len(skipped)} placeholder stop(s) skipped (sqft below threshold)."
+            st.success(msg)
+            st.rerun()
+
+    st.divider()
     st.subheader("Upload CSV")
     st.caption(
         f"Required columns: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})  "
@@ -240,6 +431,28 @@ def render_add_orders(cfg: dict):
         st.rerun()
 
 
+_ADDR_PLACEHOLDERS = {"none", "n/a", "tbd", "unknown", "na", ""}
+
+def _flag_address_issues(assignments):
+    """Return list of (truck_name, stop_num, customer, address, issue) for suspect addresses."""
+    import re
+    _STATE_RE = re.compile(r'\b[A-Z]{2}\b')
+    issues = []
+    for a in assignments:
+        for stop in a.stops:
+            addr = (stop.order.address or "").strip()
+            low = addr.lower()
+            if not addr or low in _ADDR_PLACEHOLDERS:
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "Blank or placeholder address"))
+            elif len(addr) < 15:
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "Address too short — may be incomplete"))
+            elif not any(ch.isdigit() for ch in addr):
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No street number detected"))
+            elif not _STATE_RE.search(addr):
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No state abbreviation detected"))
+    return issues
+
+
 def render_load_plan(cfg: dict):
     abbr = cfg["measurement"]["abbreviation"]
     routing_cfg = cfg.get("routing", {})
@@ -288,14 +501,16 @@ def render_load_plan(cfg: dict):
         errors = validate_inputs(orders_copy, trucks)
         if not errors:
             st.session_state.auto_run_pending = False
-            with st.spinner("Auto-optimizing routes from CSV…"):
-                assignments, dropped = solve(
-                    orders_copy, trucks, depot_coords,
-                    max_route_miles=max_route_miles,
-                    solver_time_limit=solver_time_limit,
-                )
-                st.session_state.assignments = assignments
-                st.session_state.dropped = dropped
+            anim = st.empty()
+            anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
+            assignments, dropped = solve(
+                orders_copy, trucks, depot_coords,
+                max_route_miles=max_route_miles,
+                solver_time_limit=solver_time_limit,
+            )
+            st.session_state.assignments = assignments
+            st.session_state.dropped = dropped
+            anim.markdown(_SOLVE_DONE_HTML, unsafe_allow_html=True)
         else:
             st.session_state.auto_run_pending = False
             for e in errors:
@@ -326,56 +541,52 @@ def render_load_plan(cfg: dict):
             for w in warnings:
                 st.warning(f"Multi-day route flag: {w}")
 
-        with st.spinner("Optimizing routes…"):
-            assignments, dropped = solve(
-                orders_copy, trucks, depot_coords,
-                max_route_miles=max_route_miles,
-                solver_time_limit=solver_time_limit,
-            )
-            st.session_state.assignments = assignments
-            st.session_state.dropped = dropped
+        anim = st.empty()
+        anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
+        assignments, dropped = solve(
+            orders_copy, trucks, depot_coords,
+            max_route_miles=max_route_miles,
+            solver_time_limit=solver_time_limit,
+        )
+        st.session_state.assignments = assignments
+        st.session_state.dropped = dropped
+        anim.markdown(_SOLVE_DONE_HTML, unsafe_allow_html=True)
 
     if not st.session_state.assignments and not st.session_state.dropped:
         return
 
-    # Build plan_text once; reused by both banner and bottom download button
-    lines = ["LINDSAY WINDOWS — LOAD PLAN", "=" * 60]
-    for a in st.session_state.assignments:
-        dist_note = f"  Route: {a.route_distance_miles:.0f} mi" if a.route_distance_miles else ""
-        lines += [
-            f"\n{a.truck.name}",
-            f"Capacity: {a.total_capacity_used:.0f}/{a.truck.max_capacity:.0f} {abbr} ({a.utilization_pct:.0f}%){dist_note}",
-            "\nDELIVERY ORDER:",
-        ]
-        for stop in a.stops:
-            maps_url = "https://maps.google.com/?q=" + urllib.parse.quote(stop.order.address)
-            pri_tag = f"  [PRIORITY {stop.order.priority}]" if stop.order.priority > 0 else ""
-            lines.append(f"  Stop {stop.stop_number}: {stop.order.customer_name} | {stop.order.address} | {stop.order.capacity_units:.0f} {abbr}{pri_tag}")
-            lines.append(f"    Maps: {maps_url}")
-            if stop.order.notes:
-                lines.append(f"    Note: {stop.order.notes}")
-        lines.append("\nLOAD ORDER (load #1 first — deepest in truck):")
-        for i, stop in enumerate(a.load_sequence, 1):
-            lines.append(f"  Load {i}: {stop.order.customer_name} | {stop.order.capacity_units:.0f} {abbr}")
-
-    if st.session_state.dropped:
-        lines.append("\nUNASSIGNED ORDERS:")
-        for o in st.session_state.dropped:
-            lines.append(f"  {o.order_id}: {o.customer_name} | {o.address} | {o.capacity_units:.0f} {abbr}")
-
-    lines.append("\n" + "=" * 60)
-    plan_text = "\n".join(lines)
-
     if st.session_state.assignments:
-        col_banner, col_dl = st.columns([3, 1])
-        col_banner.success("✅ Plan ready — would you like to export?")
-        col_dl.download_button(
-            "⬇ Export (.txt)",
-            data=plan_text,
-            file_name="load_plan.txt",
-            mime="text/plain",
-            key="banner_download",
+        depot_name = cfg["depot"].get("name", "Lindsay Windows")
+        html_str = generate_html_routes(
+            st.session_state.assignments,
+            depot_name=depot_name,
+            date_str=datetime.date.today().isoformat(),
         )
+        col_banner, col_dl = st.columns([3, 1])
+        col_banner.success("✅ Plan ready — export route sheets for drivers below.")
+        col_dl.download_button(
+            "⬇ Export Route Sheets (HTML)",
+            data=html_str.encode("utf-8"),
+            file_name="route_sheets.html",
+            mime="text/html",
+            key="banner_html_download",
+        )
+
+        addr_issues = _flag_address_issues(st.session_state.assignments)
+        if addr_issues:
+            with st.expander(
+                f"⚠️ {len(addr_issues)} address(es) flagged for review — verify before printing",
+                expanded=True,
+            ):
+                st.caption(
+                    "These stops have addresses that may not route correctly in Google/Apple Maps. "
+                    "Check with the route coordinator before handing sheets to drivers."
+                )
+                for truck_name, stop_num, customer, addr, issue in addr_issues:
+                    st.warning(
+                        f"**{truck_name} → Stop {stop_num} — {customer}**  \n"
+                        f"`{addr or '(blank)'}` — {issue}"
+                    )
 
     if st.session_state.dropped:
         dropped_ids = ", ".join(o.order_id for o in st.session_state.dropped)
@@ -453,12 +664,20 @@ def render_load_plan(cfg: dict):
                     st_folium(m, width="100%", height=350, returned_objects=[])
 
     st.divider()
-    st.download_button(
-        "⬇ Download Load Plan (.txt)",
-        data=plan_text,
-        file_name="load_plan.txt",
-        mime="text/plain",
-    )
+    if st.session_state.assignments:
+        depot_name = cfg["depot"].get("name", "Lindsay Windows")
+        html_str = generate_html_routes(
+            st.session_state.assignments,
+            depot_name=depot_name,
+            date_str=datetime.date.today().isoformat(),
+        )
+        st.download_button(
+            "⬇ Export Route Sheets (HTML)",
+            data=html_str.encode("utf-8"),
+            file_name="route_sheets.html",
+            mime="text/html",
+            key="bottom_html_download",
+        )
 
 
 
@@ -608,17 +827,31 @@ def main():
     st.set_page_config(page_title="Lindsay Windows — Load Planner", page_icon="🪟", layout="wide")
     init_state()
 
+    if st.session_state.first_visit:
+        _onboarding_modal()
+
     cfg = load_config()
     render_sidebar(cfg)
     cfg = load_config()  # reload in case sidebar saved
 
     st.title("🪟 Lindsay Windows — Load Planner")
 
-    tab_plan, tab_orders, tab_analysis = st.tabs(["Load Plan", "Add Orders", "Analysis"])
-    with tab_plan:
-        render_load_plan(cfg)
+    if st.session_state.get("_jump_orders"):
+        st.session_state._jump_orders = False
+        st.components.v1.html(
+            "<script>setTimeout(function(){try{"
+            "var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');"
+            "if(t&&t.length>0)t[0].click();"
+            "}catch(e){}},400);</script>",
+            height=0,
+        )
+
+    plan_label = "Load Plan ✓" if st.session_state.assignments else "Load Plan"
+    tab_orders, tab_plan, tab_analysis = st.tabs(["Add Orders", plan_label, "Analysis"])
     with tab_orders:
         render_add_orders(cfg)
+    with tab_plan:
+        render_load_plan(cfg)
     with tab_analysis:
         render_analysis(cfg)
 

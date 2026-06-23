@@ -9,3 +9,4 @@ pyarrow>=10.0.1,<19  # pyarrow 19+ conflicts with ortools on macOS via shared li
 folium>=0.17.0
 streamlit-folium>=0.22.0
 openpyxl>=3.1.0
+qrcode[pil]>=7.4.2
