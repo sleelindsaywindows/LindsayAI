@@ -97,10 +97,74 @@ def init_state():
         "auto_run_pending": False,
         "plan_text_cache": "",   # persists plan text so download never wipes state
         "first_visit": True,     # drives one-time onboarding modal
+        "onboarding_slide": 0,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+
+@st.dialog("How it works — Lindsay Windows Load Planner")
+def _onboarding_modal():
+    slides = [
+        (
+            "Welcome!",
+            "This tool takes your FeneVision delivery data and builds an optimized load plan "
+            "for each truck — automatically. It sequences stops, enforces truck restrictions "
+            "for homebuilder customers, and prints route sheets drivers can scan with their phone.",
+        ),
+        (
+            "Step 1 — Upload your FeneVision file",
+            "Go to **Add Orders** and upload the xlsx export from FeneVision (GA Trucks format). "
+            "The tool reads the 'Orders by Route' sheet, groups line items into stops, and "
+            "loads them automatically. Interplant routes are excluded based on your config.",
+        ),
+        (
+            "Step 2 — Review the Load Plan",
+            "Head to **Load Plan** — it runs automatically after upload. "
+            "You'll see each truck's delivery sequence and LIFO loading order. "
+            "Click **Regenerate Load Plan** anytime to re-run.",
+        ),
+        (
+            "Step 3 — Check the Analysis tab",
+            "**Analysis** shows utilization per truck, a homebuilder constraint audit "
+            "(flags any stop on the wrong truck type), and a comparison to Joseph's manual routes. "
+            "Export an Excel report from here.",
+        ),
+        (
+            "Step 4 — Print for drivers",
+            "Click **Export Route Sheets (HTML)** in the Load Plan tab. "
+            "Open the file in your browser and print (Cmd+P). "
+            "Each truck gets its own page with a QR code drivers scan to open the full route in Google Maps.\n\n"
+            "**Morning dispatch workflow:**\n"
+            "1. Open the app → upload today's FeneVision file\n"
+            "2. Wait ~30 seconds for the optimizer\n"
+            "3. Export route sheets → print one page per driver\n"
+            "4. Hand sheets to drivers before they leave the dock",
+        ),
+    ]
+
+    idx = st.session_state.get("onboarding_slide", 0)
+    title, body = slides[idx]
+
+    st.markdown(f"**{title}**")
+    st.markdown(body)
+    st.caption(f"Slide {idx + 1} of {len(slides)}")
+
+    col_back, col_spacer, col_next = st.columns([1, 3, 1])
+    if idx > 0:
+        if col_back.button("← Back", key="ob_back"):
+            st.session_state.onboarding_slide = idx - 1
+            st.rerun()
+    if idx < len(slides) - 1:
+        if col_next.button("Next →", key="ob_next"):
+            st.session_state.onboarding_slide = idx + 1
+            st.rerun()
+    else:
+        if col_next.button("Got it!", type="primary", key="ob_done"):
+            st.session_state.first_visit = False
+            st.session_state.onboarding_slide = 0
+            st.rerun()
 
 
 def render_sidebar(cfg: dict) -> dict:
@@ -168,6 +232,12 @@ def render_sidebar(cfg: dict) -> dict:
         }
         save_config(new_cfg)
         st.sidebar.success("Saved.")
+        st.rerun()
+
+    st.sidebar.divider()
+    if st.sidebar.button("Need Help?", use_container_width=True):
+        st.session_state.first_visit = True
+        st.session_state.onboarding_slide = 0
         st.rerun()
 
     return cfg
@@ -704,6 +774,9 @@ def render_analysis(cfg: dict):
 def main():
     st.set_page_config(page_title="Lindsay Windows — Load Planner", page_icon="🪟", layout="wide")
     init_state()
+
+    if st.session_state.first_visit:
+        _onboarding_modal()
 
     cfg = load_config()
     render_sidebar(cfg)
