@@ -33,6 +33,19 @@ body { font-family: Arial, sans-serif; font-size: 13px; color: #111; }
 .qr-img { width: 130px; height: 130px; border: 1px solid #ddd; display: block; }
 .qr-fallback { font-size: 10px; color: #888; word-break: break-all; max-width: 300px; }
 
+.maps-links { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+.maps-btn { display: inline-block; padding: 4px 10px; border-radius: 4px;
+            font-size: 11px; text-decoration: none; font-weight: bold; }
+.gmaps-btn { background: #4285f4; color: #fff !important; }
+.apple-btn { background: #555; color: #fff !important; display: none; }
+@media print { .maps-links { display: none; } }
+
+.stop-nav { margin-left: 8px; white-space: nowrap; }
+.stop-nav-btn { text-decoration: none; font-size: 14px; opacity: 0.75; }
+.stop-nav-btn:hover { opacity: 1; }
+.apple-stop-btn { display: none; }
+@media print { .stop-nav { display: none; } }
+
 h2 { font-size: 12px; font-weight: bold; text-transform: uppercase;
      letter-spacing: 0.5px; color: #333; margin-bottom: 10px;
      border-bottom: 1px solid #ddd; padding-bottom: 4px; }
@@ -68,9 +81,20 @@ def _qr_b64(url: str) -> str:
 
 
 def _maps_url(depot_name: str, stop_addresses: List[str]) -> str:
-    waypoints = [depot_name] + stop_addresses
+    valid = [a for a in stop_addresses if a and a.strip()]
+    if not valid:
+        return ""
+    waypoints = [depot_name] + valid
     encoded = "/".join(urllib.parse.quote(w, safe="") for w in waypoints)
     return f"https://www.google.com/maps/dir/{encoded}/"
+
+
+def _apple_maps_url(stop_addresses: List[str]) -> str:
+    """Apple Maps deep link — first stop only; multi-waypoint not supported via URL."""
+    valid = [a for a in stop_addresses if a and a.strip()]
+    if not valid:
+        return ""
+    return f"https://maps.apple.com/?daddr={urllib.parse.quote(valid[0], safe='')}&dirflg=d"
 
 
 def _truck_page_html(assignment: TruckAssignment, depot_name: str, date_str: str) -> str:
@@ -83,26 +107,40 @@ def _truck_page_html(assignment: TruckAssignment, depot_name: str, date_str: str
     for i, leg in enumerate(legs):
         addresses = [s.order.address for s in leg]
         url = _maps_url(depot_name, addresses)
-        qr_data = _qr_b64(url)
+        apple_url = _apple_maps_url(addresses)
+        qr_data = _qr_b64(url) if url else ""
         label = (
             f"Leg {i + 1} &nbsp;(Stops {leg[0].stop_number}–{leg[-1].stop_number})"
             if len(legs) > 1
             else "Scan for Google Maps Route"
         )
-        if qr_data:
-            qr_html += (
-                f'<div class="qr-block">'
-                f'<p class="qr-label">{label}</p>'
+        if qr_data and url:
+            media_html = (
+                f'<a href="{url}" target="_blank" rel="noopener">'
                 f'<img src="data:image/png;base64,{qr_data}" class="qr-img" alt="QR code">'
-                f'</div>'
+                f'</a>'
             )
+        elif url:
+            media_html = f'<p class="qr-fallback"><a href="{url}">{url}</a></p>'
         else:
-            qr_html += (
-                f'<div class="qr-block">'
-                f'<p class="qr-label">{label}</p>'
-                f'<p class="qr-fallback">{url}</p>'
-                f'</div>'
+            media_html = '<p class="qr-fallback" style="color:#c00">No valid addresses for map link</p>'
+
+        maps_links = ""
+        if url:
+            maps_links += f'<a href="{url}" class="maps-btn gmaps-btn" target="_blank" rel="noopener">📍 Google Maps</a>'
+        if apple_url:
+            maps_links += (
+                f'<a href="{apple_url}" class="maps-btn apple-btn" target="_blank" rel="noopener" '
+                f'title="Apple Maps — first stop only">🍎 Apple Maps</a>'
             )
+
+        qr_html += (
+            f'<div class="qr-block">'
+            f'<p class="qr-label">{label}</p>'
+            f'{media_html}'
+            f'<div class="maps-links">{maps_links}</div>'
+            f'</div>'
+        )
     qr_html += "</div>"
 
     stops_html = '<div class="stops-section"><h2>Delivery Stops</h2>'
@@ -111,11 +149,22 @@ def _truck_page_html(assignment: TruckAssignment, depot_name: str, date_str: str
         addr_lines = o.address.replace(", ", "<br>")
         pri_html = f'<span class="priority-tag">PRIORITY {o.priority}</span>' if o.priority > 0 else ""
         notes_html = f'<div class="stop-notes">&#9888; {o.notes}</div>' if o.notes else ""
+        stop_apple_url = _apple_maps_url([o.address]) if o.address and o.address.strip() else ""
+        stop_gmaps_url = _maps_url(depot_name, [o.address]) if o.address and o.address.strip() else ""
+        nav_links = ""
+        if stop_gmaps_url:
+            nav_links += f'<a href="{stop_gmaps_url}" class="stop-nav-btn gmaps-stop-btn" target="_blank" rel="noopener">📍</a>'
+        if stop_apple_url:
+            nav_links += (
+                f'<a href="{stop_apple_url}" class="stop-nav-btn apple-stop-btn" '
+                f'target="_blank" rel="noopener">🍎</a>'
+            )
         stops_html += (
             f'<div class="stop-card">'
             f'<div class="stop-num">{stop.stop_number}.</div>'
             f'<div class="stop-body">'
-            f'<div class="company">{o.customer_name}{pri_html}</div>'
+            f'<div class="company">{o.customer_name}{pri_html}'
+            f'<span class="stop-nav">{nav_links}</span></div>'
             f'<div class="address">{addr_lines}</div>'
             f'<div class="sqft">{o.capacity_units:.0f} sq ft</div>'
             f'{notes_html}'
@@ -182,11 +231,23 @@ def generate_html_routes(
         "<html lang=\"en\">\n"
         "<head>\n"
         "<meta charset=\"UTF-8\">\n"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n"
         f"<title>Lindsay Windows Route Sheets — {date_str}</title>\n"
         f"<style>{_CSS}</style>\n"
         "</head>\n"
         "<body>\n"
         f"{pages}\n"
+        "<script>\n"
+        "(function(){\n"
+        "  var ua=navigator.userAgent;\n"
+        "  var isApple=/iPad|iPhone|iPod/.test(ua)||(ua.indexOf('Mac')>-1&&navigator.maxTouchPoints>1);\n"
+        "  if(isApple){\n"
+        "    document.querySelectorAll('.apple-btn,.apple-stop-btn').forEach(function(b){\n"
+        "      b.style.display='inline-block';\n"
+        "    });\n"
+        "  }\n"
+        "})();\n"
+        "</script>\n"
         "</body>\n"
         "</html>"
     )

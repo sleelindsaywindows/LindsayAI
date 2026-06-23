@@ -5,3 +5,7 @@ __pycache__/
 venv/
 *.egg-info/
 .DS_Store
+
+# Local Streamlit dev config — disables CORS/XSRF for VS Code simple browser.
+# Do NOT commit — production deployments need these protections on.
+.streamlit/config.toml

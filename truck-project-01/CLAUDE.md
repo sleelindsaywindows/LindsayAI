@@ -210,7 +210,15 @@ Invocation pattern in Claude Code: `/skill-name`
 8. **Driver name assignment** — Joseph names routes by driver (Kristin, Juan, Raymond, etc.).
    Optimizer uses generic truck names. Needs a driver roster or manual assignment UI — defer
    until after Joseph meeting.
-9. **FeneVision live feed** — VPN + stored procedures + scheduled job; proceed in parallel once
+9. **MapKit JS — Apple Maps multi-stop routes** — Apple Maps URL scheme only supports
+   single-destination deep links; multi-waypoint routing requires Apple's MapKit JS web API.
+   Current workaround: per-stop 🍎 links in the HTML route sheet (iOS only, hidden on print).
+   Full implementation: embed a MapKit JS map in the HTML export that builds a true multi-stop
+   route and generates a shareable link drivers can tap. Requires an Apple Developer account
+   ($99/yr) and a MapKit JS API key. Not blocking until drivers actively complain about the
+   per-stop workaround. Playwright automation of maps.apple.com was evaluated and rejected —
+   fragile against UI changes and doesn't produce a deep link usable on a driver's phone.
+10. **FeneVision live feed** — VPN + stored procedures + scheduled job; proceed in parallel once
    the optimizer output has been manually validated for several weeks
 
 ### Intentional simplifications (not bugs)

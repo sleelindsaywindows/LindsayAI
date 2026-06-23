@@ -102,52 +102,83 @@ def init_state():
             st.session_state[k] = v
 
 
-@st.dialog("How it works — Lindsay Windows Load Planner")
+@st.dialog("🪟 Lindsay Windows Load Planner", width="large")
 def _onboarding_modal():
     slides = [
         (
-            "Welcome!",
+            "👋 Welcome!",
+            "#1a5fa8",
             "This tool takes your FeneVision delivery data and builds an optimized load plan "
             "for each truck — automatically. It sequences stops, enforces truck restrictions "
             "for homebuilder customers, and prints route sheets drivers can scan with their phone.",
         ),
         (
-            "Step 1 — Upload your FeneVision file",
+            "📂 Upload your FeneVision file",
+            "#2e7d32",
             "Go to **Add Orders** and upload the xlsx export from FeneVision (GA Trucks format). "
             "The tool reads the 'Orders by Route' sheet, groups line items into stops, and "
             "loads them automatically. Interplant routes are excluded based on your config.",
         ),
         (
-            "Step 2 — Review the Load Plan",
+            "🗺️ Review the Load Plan",
+            "#6a1b9a",
             "Head to **Load Plan** — it runs automatically after upload. "
             "You'll see each truck's delivery sequence and LIFO loading order. "
-            "Click **Regenerate Load Plan** anytime to re-run.",
+            "Click **Regenerate Load Plan** anytime to re-run with updated settings.",
         ),
         (
-            "Step 3 — Check the Analysis tab",
+            "📊 Check the Analysis tab",
+            "#e65100",
             "**Analysis** shows utilization per truck, a homebuilder constraint audit "
-            "(flags any stop on the wrong truck type), and a comparison to Joseph's manual routes. "
-            "Export an Excel report from here.",
+            "(flags any stop assigned to the wrong truck type), and a cost comparison "
+            "against Joseph's manual routes. Export an Excel report from here.",
         ),
         (
-            "Step 4 — Print for drivers",
-            "Click **Export Route Sheets (HTML)** in the Load Plan tab. "
-            "Open the file in your browser and print (Cmd+P). "
-            "Each truck gets its own page with a QR code drivers scan to open the full route in Google Maps.\n\n"
+            "🖨️ Print for drivers",
+            "#1565c0",
+            "Click **Export Route Sheets (HTML)** in the Load Plan tab and open it in your browser. "
+            "Hit **Cmd+P** to print — each truck gets its own page.\n\n"
             "**Morning dispatch workflow:**\n"
             "1. Open the app → upload today's FeneVision file\n"
-            "2. Wait ~30 seconds for the optimizer\n"
+            "2. Wait ~30 seconds for the optimizer to run\n"
             "3. Export route sheets → print one page per driver\n"
-            "4. Hand sheets to drivers before they leave the dock",
+            "4. Drivers scan the QR code to open their full route in Google Maps\n"
+            "5. Hand sheets to drivers before they leave the dock",
         ),
     ]
 
     idx = st.session_state.get("onboarding_slide", 0)
-    title, body = slides[idx]
+    title, accent, body = slides[idx]
 
-    st.markdown(f"**{title}**")
+    # Progress dots
+    dots = "".join(
+        f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+        f'background:{"' + accent + '" if i == idx else "#dde3ea"};margin:0 5px;'
+        f'transition:background 0.3s;"></span>'
+        for i in range(len(slides))
+    )
+
+    st.markdown(
+        f"""
+        <div style="background:linear-gradient(135deg,{accent}18,{accent}08);
+                    border-left:4px solid {accent};border-radius:8px;
+                    padding:18px 20px;margin-bottom:16px;">
+            <div style="font-size:1.35rem;font-weight:700;color:{accent};
+                        margin-bottom:4px;">{title}</div>
+            <div style="color:#444;margin-top:2px;font-size:0.8rem;letter-spacing:0.5px;">
+                STEP {idx + 1} OF {len(slides)}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.markdown(body)
-    st.caption(f"Slide {idx + 1} of {len(slides)}")
+
+    st.markdown(
+        f'<div style="text-align:center;margin-top:20px;margin-bottom:4px;">{dots}</div>',
+        unsafe_allow_html=True,
+    )
 
     col_back, col_spacer, col_next = st.columns([1, 3, 1])
     if idx > 0:
@@ -155,13 +186,14 @@ def _onboarding_modal():
             st.session_state.onboarding_slide = idx - 1
             st.rerun()
     if idx < len(slides) - 1:
-        if col_next.button("Next →", key="ob_next"):
+        if col_next.button("Next →", key="ob_next", type="primary"):
             st.session_state.onboarding_slide = idx + 1
             st.rerun()
     else:
         if col_next.button("Got it!", type="primary", key="ob_done"):
             st.session_state.first_visit = False
             st.session_state.onboarding_slide = 0
+            st.session_state._jump_orders = True
             st.rerun()
 
 
@@ -399,6 +431,28 @@ def render_add_orders(cfg: dict):
         st.rerun()
 
 
+_ADDR_PLACEHOLDERS = {"none", "n/a", "tbd", "unknown", "na", ""}
+
+def _flag_address_issues(assignments):
+    """Return list of (truck_name, stop_num, customer, address, issue) for suspect addresses."""
+    import re
+    _STATE_RE = re.compile(r'\b[A-Z]{2}\b')
+    issues = []
+    for a in assignments:
+        for stop in a.stops:
+            addr = (stop.order.address or "").strip()
+            low = addr.lower()
+            if not addr or low in _ADDR_PLACEHOLDERS:
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "Blank or placeholder address"))
+            elif len(addr) < 15:
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "Address too short — may be incomplete"))
+            elif not any(ch.isdigit() for ch in addr):
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No street number detected"))
+            elif not _STATE_RE.search(addr):
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No state abbreviation detected"))
+    return issues
+
+
 def render_load_plan(cfg: dict):
     abbr = cfg["measurement"]["abbreviation"]
     routing_cfg = cfg.get("routing", {})
@@ -517,6 +571,22 @@ def render_load_plan(cfg: dict):
             mime="text/html",
             key="banner_html_download",
         )
+
+        addr_issues = _flag_address_issues(st.session_state.assignments)
+        if addr_issues:
+            with st.expander(
+                f"⚠️ {len(addr_issues)} address(es) flagged for review — verify before printing",
+                expanded=True,
+            ):
+                st.caption(
+                    "These stops have addresses that may not route correctly in Google/Apple Maps. "
+                    "Check with the route coordinator before handing sheets to drivers."
+                )
+                for truck_name, stop_num, customer, addr, issue in addr_issues:
+                    st.warning(
+                        f"**{truck_name} → Stop {stop_num} — {customer}**  \n"
+                        f"`{addr or '(blank)'}` — {issue}"
+                    )
 
     if st.session_state.dropped:
         dropped_ids = ", ".join(o.order_id for o in st.session_state.dropped)
@@ -765,6 +835,16 @@ def main():
     cfg = load_config()  # reload in case sidebar saved
 
     st.title("🪟 Lindsay Windows — Load Planner")
+
+    if st.session_state.get("_jump_orders"):
+        st.session_state._jump_orders = False
+        st.components.v1.html(
+            "<script>setTimeout(function(){try{"
+            "var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');"
+            "if(t&&t.length>0)t[0].click();"
+            "}catch(e){}},400);</script>",
+            height=0,
+        )
 
     plan_label = "Load Plan ✓" if st.session_state.assignments else "Load Plan"
     tab_orders, tab_plan, tab_analysis = st.tabs(["Add Orders", plan_label, "Analysis"])

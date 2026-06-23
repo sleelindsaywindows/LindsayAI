@@ -1,0 +1,53 @@
+name: Notify Teams
+
+on:
+  push:
+    branches: [main, phase1-fenevision-ui-overhaul, phase2-import-ui-html-export]
+  pull_request:
+    types: [opened, closed, reopened]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Teams notification
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TITLE="📦 Push to \`${{ github.ref_name }}\`"
+            MSG="${{ github.actor }} pushed: ${{ github.event.commits[0].message }}"
+            URL="${{ github.event.compare }}"
+          else
+            PR_ACTION="${{ github.event.action }}"
+            if [ "$PR_ACTION" = "closed" ] && [ "${{ github.event.pull_request.merged }}" = "true" ]; then
+              TITLE="✅ PR Merged — ${{ github.event.pull_request.title }}"
+            elif [ "$PR_ACTION" = "opened" ]; then
+              TITLE="🔀 PR Opened — ${{ github.event.pull_request.title }}"
+            else
+              TITLE="🔀 PR ${{ github.event.action }} — ${{ github.event.pull_request.title }}"
+            fi
+            MSG="by ${{ github.actor }}"
+            URL="${{ github.event.pull_request.html_url }}"
+          fi
+
+          curl -s -X POST "${{ secrets.TEAMS_WEBHOOK_URL }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"type\": \"message\",
+              \"attachments\": [{
+                \"contentType\": \"application/vnd.microsoft.card.adaptive\",
+                \"content\": {
+                  \"\$schema\": \"http://adaptivecards.io/schemas/adaptive-card.json\",
+                  \"type\": \"AdaptiveCard\",
+                  \"version\": \"1.2\",
+                  \"body\": [
+                    {\"type\": \"TextBlock\", \"text\": \"$TITLE\", \"weight\": \"Bolder\", \"size\": \"Medium\"},
+                    {\"type\": \"TextBlock\", \"text\": \"$MSG\", \"wrap\": true, \"isSubtle\": true}
+                  ],
+                  \"actions\": [{
+                    \"type\": \"Action.OpenUrl\",
+                    \"title\": \"View on GitHub\",
+                    \"url\": \"$URL\"
+                  }]
+                }
+              }]
+            }"
