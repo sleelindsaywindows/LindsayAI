@@ -141,7 +141,7 @@ exchange flag.
 Primary sheet: `Orders by Route`. Each row is a **line item**, not a stop — one stop has
 many rows (multiple window sizes / orders). Aggregate to stop level before feeding the optimizer.
 
-Key columns used by `import_geoffs_xlsx()`:
+Key columns used by `import_fenevision_xlsx()`:
 ```
 RouteID, RouteName, Stop               → route grouping
 shpaddr_companyname                    → customer_name
@@ -154,7 +154,7 @@ TruckTypeDesc                          → allowed_truck_types ("GA-26' ST" → 
 `Trucks` sheet = fleet definitions (capacity, cost/mile, quantity available).
 
 The MO route (`6/17 Lindsay MO 53'`) is an interplant transfer, not a customer delivery.
-Exclude it via the `exclude_routes` parameter in `import_geoffs_xlsx()`.
+Exclude it via the `exclude_route_patterns` parameter in `import_fenevision_xlsx()` — a list of substrings matched case-insensitively against RouteName (e.g. `[" MO "]`). Configured in `config.yaml → routing.exclude_route_patterns`.
 
 ---
 
@@ -185,12 +185,13 @@ Invocation pattern in Claude Code: `/skill-name`
 
 ### Done
 - Solver: bin assignment + route sequencing + truck preference + HOS cap + dropped order reporting
-- UI: NL parse (two-agent), CSV upload, verification card, LIFO display, .txt export
+- UI: NL parse (two-agent), CSV upload, verification card, LIFO display
 - Pre-flight: `validate_inputs()` + `check_route_cap()` for multi-day candidates
-- `src/import_fenevision.py`: FeneVision CSV mapper (`import_fenevision`) + Geoff's xlsx mapper (`import_geoffs_xlsx`)
+- `src/import_fenevision.py`: FeneVision CSV mapper (`import_fenevision`) + xlsx mapper (`import_fenevision_xlsx`)
 - `Order.allowed_truck_types`: per-customer truck restriction, enforced in optimizer via `SetAllowedVehiclesForIndex`
 - Real truck capacities in config (431.06 / 208 sq ft from Geoff's Trucks sheet)
 - First optimizer run against Geoff's 6/17 historical data; comparison vs Joseph's routes documented
+- Phase 2: in-app FeneVision xlsx upload (no terminal required), CSS solve animation, first-time onboarding modal, printable HTML route sheets with QR codes, tab reorder (Add Orders | Load Plan | Analysis)
 
 ### Next (in priority order)
 1. **Customer truck restriction lookup table** — currently derived from route's TruckTypeDesc;
@@ -198,12 +199,18 @@ Invocation pattern in Claude Code: `/skill-name`
    appears on a new route or is entered via NL/CSV upload
 2. **Real driving distances** — swap `_haversine_miles` in `_build_distance_matrix` for OSRM
    (free) or Google Maps Distance Matrix API (~$5/1000 pairs). Nothing else changes.
-3. **Driver-ready output** — Google Maps multi-stop URL per truck; CSV summary for dispatcher
+3. **Unload time buffer per stop** — add configurable `unload_minutes_per_stop` to config.yaml;
+   use it in HOS modeling alongside mileage. Check with [Names] in Minnesota for realistic values.
 4. **2D packing check** — add `length`/`width` to `Order`; use `rectpack` to catch loads that
    pass the sq ft check but physically won't fit
 5. **Delivery time windows** — `time_window_open`/`close` on `Order`; Time dimension in solver
 6. **Constraint relaxation** — re-run with soft time windows if primary solve drops orders
-7. **FeneVision live feed** — VPN + stored procedures + scheduled job; proceed in parallel once
+7. **Session persistence** — file-based JSON for single-machine use; when app goes multi-user
+   or cloud, add Streamlit OAuth (Google/Microsoft SSO). Deferred until after Joseph meeting.
+8. **Driver name assignment** — Joseph names routes by driver (Kristin, Juan, Raymond, etc.).
+   Optimizer uses generic truck names. Needs a driver roster or manual assignment UI — defer
+   until after Joseph meeting.
+9. **FeneVision live feed** — VPN + stored procedures + scheduled job; proceed in parallel once
    the optimizer output has been manually validated for several weeks
 
 ### Intentional simplifications (not bugs)
