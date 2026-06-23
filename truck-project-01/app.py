@@ -47,6 +47,8 @@ def init_state():
         "dropped": [],
         "uploader_key": 0,
         "auto_run_pending": False,
+        "plan_text_cache": "",   # persists plan text so download never wipes state
+        "first_visit": True,     # drives one-time onboarding modal
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -96,7 +98,11 @@ def render_sidebar(cfg: dict) -> dict:
             "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
             "trucks": updated_trucks + [{"name": "New Truck", "type": "straight", "max_capacity": 176.0, "fixed_cost": 5.0, "cost_per_mile": 0.0}],
             "depot": {"name": depot_name, "address": depot_addr},
-            "routing": {"max_route_miles": max_miles, "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15)},
+            "routing": {
+                "max_route_miles": max_miles,
+                "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
+                "exclude_route_patterns": routing.get("exclude_route_patterns", []),
+            },
         }
         save_config(new_cfg)
         st.rerun()
@@ -106,7 +112,11 @@ def render_sidebar(cfg: dict) -> dict:
             "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
             "trucks": updated_trucks,
             "depot": {"name": depot_name, "address": depot_addr},
-            "routing": {"max_route_miles": max_miles, "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15)},
+            "routing": {
+                "max_route_miles": max_miles,
+                "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
+                "exclude_route_patterns": routing.get("exclude_route_patterns", []),
+            },
         }
         save_config(new_cfg)
         st.sidebar.success("Saved.")
@@ -365,6 +375,7 @@ def render_load_plan(cfg: dict):
 
     lines.append("\n" + "=" * 60)
     plan_text = "\n".join(lines)
+    st.session_state.plan_text_cache = plan_text  # survive download re-renders
 
     if st.session_state.assignments:
         col_banner, col_dl = st.columns([3, 1])
@@ -455,9 +466,10 @@ def render_load_plan(cfg: dict):
     st.divider()
     st.download_button(
         "⬇ Download Load Plan (.txt)",
-        data=plan_text,
+        data=st.session_state.plan_text_cache or plan_text,
         file_name="load_plan.txt",
         mime="text/plain",
+        key="bottom_download",
     )
 
 

@@ -18,17 +18,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import yaml
 
 from src.models import Truck
-from src.import_fenevision import import_geoffs_xlsx
+from src.import_fenevision import import_fenevision_xlsx
 from src.optimizer import solve, validate_inputs, check_route_cap, geocode_address
 from src.analysis import generate_report
 
 XLSX_PATH = "sample_data/GA_Trucks_2026-06-17.xlsx"
-EXCLUDE_ROUTES = ["6/17 Lindsay MO 53'"]
+EXCLUDE_PATTERNS = [" MO "]  # matches interplant routes like "6/17 Lindsay MO 53'"; space prevents matching driver names like "Raymond"
 OUTPUT_PATH = "lindsay_analysis_617.xlsx"
 JOSEPHS_TRUCK_COUNT = 13
 
 
-def _preflight_checks(orders, trucks, xlsx_path, exclude_routes):
+def _preflight_checks(orders, trucks, xlsx_path, exclude_patterns):
     """Run pre-flight checks and print warnings. Returns list of error strings."""
     errors = []
     warnings = []
@@ -65,19 +65,20 @@ def _preflight_checks(orders, trucks, xlsx_path, exclude_routes):
             f"({total_fleet_sqft:.1f}). Some orders will be dropped."
         )
 
-    # 5. exclude_routes entries that don't match any RouteName in the xlsx
+    # 5. Check exclude_patterns match at least one route
     try:
         import pandas as pd
         df = pd.read_excel(xlsx_path, sheet_name="Orders by Route", header=0)
-        route_names = set(df["RouteName"].dropna().unique())
-        for name in (exclude_routes or []):
-            if name not in route_names:
+        route_names = list(df["RouteName"].dropna().unique())
+        for pat in (exclude_patterns or []):
+            matched = [r for r in route_names if pat.lower() in r.lower()]
+            if not matched:
                 warnings.append(
-                    f"exclude_routes entry '{name}' did not match any RouteName in xlsx "
+                    f"exclude_route_patterns entry '{pat}' matched no RouteName in xlsx "
                     f"(possible typo). Available routes: {sorted(route_names)}"
                 )
     except Exception as e:
-        warnings.append(f"Could not verify exclude_routes against xlsx: {e}")
+        warnings.append(f"Could not verify exclude_route_patterns against xlsx: {e}")
 
     for w in warnings:
         print(f"WARN: {w}", file=sys.stderr)
@@ -106,11 +107,11 @@ def main():
     ]
 
     # Import orders
-    orders, skipped = import_geoffs_xlsx(XLSX_PATH, exclude_routes=EXCLUDE_ROUTES)
-    print(f"Loaded {len(orders)} stops ({len(skipped)} skipped). Excluded routes: {len(EXCLUDE_ROUTES)}.")
+    orders, skipped, excluded = import_fenevision_xlsx(XLSX_PATH, exclude_route_patterns=EXCLUDE_PATTERNS)
+    print(f"Loaded {len(orders)} stops ({len(skipped)} skipped). Excluded routes: {excluded}.")
 
     # Pre-flight checks
-    errors = _preflight_checks(orders, trucks, XLSX_PATH, EXCLUDE_ROUTES)
+    errors = _preflight_checks(orders, trucks, XLSX_PATH, EXCLUDE_PATTERNS)
     if errors:
         for e in errors:
             print(f"ERROR: {e}", file=sys.stderr)

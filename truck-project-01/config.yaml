@@ -99,3 +99,4 @@ depot:
 routing:
   max_route_miles: 600          # extended for NC/SC routes; confirm real HOS cap with Joseph
   solver_time_limit_seconds: 30
+  exclude_route_patterns: []    # substrings matched case-insensitively against RouteName; empty = no exclusions

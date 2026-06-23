@@ -21,14 +21,14 @@ def _fenevision_truck_type(desc: Optional[str]) -> Optional[str]:
     return _TRUCK_TYPE_MAP.get(str(desc).strip())
 
 
-def import_geoffs_xlsx(
-    xlsx_path: str,
+def import_fenevision_xlsx(
+    xlsx_path,
     sheet_name: str = "Orders by Route",
-    exclude_routes: Optional[List[str]] = None,
+    exclude_route_patterns: Optional[List[str]] = None,
     min_sqft: float = 0.01,
-) -> Tuple[List[Order], List[dict]]:
+) -> Tuple[List[Order], List[dict], List[str]]:
     """
-    Import Geoff's real FeneVision xlsx export (GA Trucks format) and return
+    Import a FeneVision xlsx export (Orders by Route format) and return
     one Order per delivery stop (aggregated from line-item rows).
 
     Each stop = unique (RouteID, Stop, shpaddr_companyname) combination.
@@ -36,13 +36,17 @@ def import_geoffs_xlsx(
     Truck type restriction is read from TruckTypeDesc and stored in allowed_truck_types.
 
     Args:
-        xlsx_path: Path to Geoff's xlsx file.
+        xlsx_path: Path string or file-like object for the xlsx file.
         sheet_name: Sheet with order line items (default "Orders by Route").
-        exclude_routes: List of RouteName values to skip (e.g. interplant transfers).
+        exclude_route_patterns: Substrings matched case-insensitively against RouteName.
+            Any route whose name contains a pattern is excluded. Empty list = no exclusions.
         min_sqft: Stops with total sqft below this are skipped (placeholder stops).
 
     Returns:
-        (orders, skipped) where skipped is a list of dicts describing excluded stops.
+        (orders, skipped, excluded_route_names)
+        - orders: one Order per stop
+        - skipped: list of dicts describing stops excluded for low sqft
+        - excluded_route_names: unique RouteName values removed by pattern matching
     """
     df = pd.read_excel(xlsx_path, sheet_name=sheet_name, header=0)
 
@@ -56,8 +60,14 @@ def import_geoffs_xlsx(
     if missing:
         raise ValueError(f"xlsx sheet '{sheet_name}' missing columns: {missing}")
 
-    if exclude_routes:
-        df = df[~df["RouteName"].isin(exclude_routes)]
+    excluded_route_names: List[str] = []
+    if exclude_route_patterns:
+        patterns_lower = [p.lower() for p in exclude_route_patterns]
+        mask = df["RouteName"].apply(
+            lambda name: any(p in str(name).lower() for p in patterns_lower)
+        )
+        excluded_route_names = list(df.loc[mask, "RouteName"].dropna().unique())
+        df = df[~mask]
 
     # Aggregate line items → one row per delivery stop.
     # TruckType/TruckTypeDesc come from the route, so first() is stable within a stop.
@@ -120,7 +130,7 @@ def import_geoffs_xlsx(
             allowed_truck_types=allowed,
         ))
 
-    return orders, skipped
+    return orders, skipped, excluded_route_names
 
 
 def import_fenevision(
@@ -128,7 +138,7 @@ def import_fenevision(
 ) -> Tuple[List[Order], List[dict]]:
     """
     Convert FeneVision generic CSV export to Order objects (one Order per CSV row).
-    For Geoff's real xlsx data use import_geoffs_xlsx() instead.
+    For FeneVision xlsx data use import_fenevision_xlsx() instead.
 
     FeneVision fields expected:
       order_number, window_width, window_height, ship_qty,
