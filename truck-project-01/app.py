@@ -1,6 +1,5 @@
 import copy
 import os
-import urllib.parse
 import yaml
 import streamlit as st
 import pandas as pd
@@ -95,7 +94,6 @@ def init_state():
         "dropped": [],
         "uploader_key": 0,
         "auto_run_pending": False,
-        "plan_text_cache": "",   # persists plan text so download never wipes state
         "first_visit": True,     # drives one-time onboarding modal
         "onboarding_slide": 0,
     }
@@ -503,44 +501,21 @@ def render_load_plan(cfg: dict):
     if not st.session_state.assignments and not st.session_state.dropped:
         return
 
-    # Build plan_text once; reused by both banner and bottom download button
-    lines = ["LINDSAY WINDOWS — LOAD PLAN", "=" * 60]
-    for a in st.session_state.assignments:
-        dist_note = f"  Route: {a.route_distance_miles:.0f} mi" if a.route_distance_miles else ""
-        lines += [
-            f"\n{a.truck.name}",
-            f"Capacity: {a.total_capacity_used:.0f}/{a.truck.max_capacity:.0f} {abbr} ({a.utilization_pct:.0f}%){dist_note}",
-            "\nDELIVERY ORDER:",
-        ]
-        for stop in a.stops:
-            maps_url = "https://maps.google.com/?q=" + urllib.parse.quote(stop.order.address)
-            pri_tag = f"  [PRIORITY {stop.order.priority}]" if stop.order.priority > 0 else ""
-            lines.append(f"  Stop {stop.stop_number}: {stop.order.customer_name} | {stop.order.address} | {stop.order.capacity_units:.0f} {abbr}{pri_tag}")
-            lines.append(f"    Maps: {maps_url}")
-            if stop.order.notes:
-                lines.append(f"    Note: {stop.order.notes}")
-        lines.append("\nLOAD ORDER (load #1 first — deepest in truck):")
-        for i, stop in enumerate(a.load_sequence, 1):
-            lines.append(f"  Load {i}: {stop.order.customer_name} | {stop.order.capacity_units:.0f} {abbr}")
-
-    if st.session_state.dropped:
-        lines.append("\nUNASSIGNED ORDERS:")
-        for o in st.session_state.dropped:
-            lines.append(f"  {o.order_id}: {o.customer_name} | {o.address} | {o.capacity_units:.0f} {abbr}")
-
-    lines.append("\n" + "=" * 60)
-    plan_text = "\n".join(lines)
-    st.session_state.plan_text_cache = plan_text  # survive download re-renders
-
     if st.session_state.assignments:
+        depot_name = cfg["depot"].get("name", "Lindsay Windows")
+        html_str = generate_html_routes(
+            st.session_state.assignments,
+            depot_name=depot_name,
+            date_str=datetime.date.today().isoformat(),
+        )
         col_banner, col_dl = st.columns([3, 1])
-        col_banner.success("✅ Plan ready — would you like to export?")
+        col_banner.success("✅ Plan ready — export route sheets for drivers below.")
         col_dl.download_button(
-            "⬇ Export (.txt)",
-            data=plan_text,
-            file_name="load_plan.txt",
-            mime="text/plain",
-            key="banner_download",
+            "⬇ Export Route Sheets (HTML)",
+            data=html_str.encode("utf-8"),
+            file_name="route_sheets.html",
+            mime="text/html",
+            key="banner_html_download",
         )
 
     if st.session_state.dropped:
@@ -619,13 +594,20 @@ def render_load_plan(cfg: dict):
                     st_folium(m, width="100%", height=350, returned_objects=[])
 
     st.divider()
-    st.download_button(
-        "⬇ Download Load Plan (.txt)",
-        data=st.session_state.plan_text_cache or plan_text,
-        file_name="load_plan.txt",
-        mime="text/plain",
-        key="bottom_download",
-    )
+    if st.session_state.assignments:
+        depot_name = cfg["depot"].get("name", "Lindsay Windows")
+        html_str = generate_html_routes(
+            st.session_state.assignments,
+            depot_name=depot_name,
+            date_str=datetime.date.today().isoformat(),
+        )
+        st.download_button(
+            "⬇ Export Route Sheets (HTML)",
+            data=html_str.encode("utf-8"),
+            file_name="route_sheets.html",
+            mime="text/html",
+            key="bottom_html_download",
+        )
 
 
 
