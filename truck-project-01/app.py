@@ -31,6 +31,51 @@ except ImportError:
 
 CONFIG_PATH = Path("config.yaml")
 
+_SOLVE_ANIMATION_HTML = """
+<div style="text-align:center;padding:2.5rem 0;font-family:Arial,sans-serif;">
+  <svg width="72" height="72" viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg"
+       style="display:block;margin:0 auto 1.25rem;">
+    <style>
+      @keyframes _fp{0%,100%{opacity:.2}50%{opacity:.9}}
+      .wp{fill:#c8e6f7;animation:_fp 2.5s ease-in-out infinite;}
+      .wf{fill:none;stroke:#1a5fa8;stroke-width:3;}
+      .wb{stroke:#1a5fa8;stroke-width:2;}
+    </style>
+    <rect class="wf" x="10" y="10" width="60" height="60" rx="3"/>
+    <rect class="wp" x="14" y="14" width="24" height="24" style="animation-delay:0s"/>
+    <rect class="wp" x="42" y="14" width="24" height="24" style="animation-delay:.35s"/>
+    <rect class="wp" x="14" y="42" width="24" height="24" style="animation-delay:.7s"/>
+    <rect class="wp" x="42" y="42" width="24" height="24" style="animation-delay:1.05s"/>
+    <line class="wb" x1="40" y1="10" x2="40" y2="70"/>
+    <line class="wb" x1="10" y1="40" x2="70" y2="40"/>
+  </svg>
+  <div style="position:relative;height:1.8rem;overflow:hidden;">
+    <style>
+      @keyframes _m1{0%{opacity:0}3%{opacity:1}17%{opacity:1}20%{opacity:0}100%{opacity:0}}
+      @keyframes _m2{0%,20%{opacity:0}23%{opacity:1}37%{opacity:1}40%{opacity:0}100%{opacity:0}}
+      @keyframes _m3{0%,40%{opacity:0}43%{opacity:1}57%{opacity:1}60%{opacity:0}100%{opacity:0}}
+      @keyframes _m4{0%,60%{opacity:0}63%{opacity:1}77%{opacity:1}80%{opacity:0}100%{opacity:0}}
+      @keyframes _m5{0%,80%{opacity:0}83%{opacity:1}97%{opacity:1}100%{opacity:0}}
+      .sm{position:absolute;width:100%;text-align:center;font-size:.95rem;color:#555;
+          animation-duration:20s;animation-iteration-count:infinite;animation-fill-mode:both;}
+    </style>
+    <p class="sm" style="animation-name:_m1">Reading stops across your routes…</p>
+    <p class="sm" style="animation-name:_m2">Checking homebuilder truck restrictions…</p>
+    <p class="sm" style="animation-name:_m3">Assigning stops to trucks…</p>
+    <p class="sm" style="animation-name:_m4">Sequencing delivery stops by distance…</p>
+    <p class="sm" style="animation-name:_m5">Building LIFO load order…</p>
+  </div>
+</div>
+"""
+
+_SOLVE_DONE_HTML = """
+<div style="text-align:center;padding:1.5rem 0;font-family:Arial,sans-serif;
+            color:#1a7a1a;font-size:1rem;">
+  &#10003; Routes are ready &mdash; head to the <strong>Load Plan</strong> tab
+  to see assignments and export for drivers.
+</div>
+"""
+
 
 def load_config() -> dict:
     with open(CONFIG_PATH) as f:
@@ -334,14 +379,16 @@ def render_load_plan(cfg: dict):
         errors = validate_inputs(orders_copy, trucks)
         if not errors:
             st.session_state.auto_run_pending = False
-            with st.spinner("Auto-optimizing routes from CSV…"):
-                assignments, dropped = solve(
-                    orders_copy, trucks, depot_coords,
-                    max_route_miles=max_route_miles,
-                    solver_time_limit=solver_time_limit,
-                )
-                st.session_state.assignments = assignments
-                st.session_state.dropped = dropped
+            anim = st.empty()
+            anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
+            assignments, dropped = solve(
+                orders_copy, trucks, depot_coords,
+                max_route_miles=max_route_miles,
+                solver_time_limit=solver_time_limit,
+            )
+            st.session_state.assignments = assignments
+            st.session_state.dropped = dropped
+            anim.markdown(_SOLVE_DONE_HTML, unsafe_allow_html=True)
         else:
             st.session_state.auto_run_pending = False
             for e in errors:
@@ -372,14 +419,16 @@ def render_load_plan(cfg: dict):
             for w in warnings:
                 st.warning(f"Multi-day route flag: {w}")
 
-        with st.spinner("Optimizing routes…"):
-            assignments, dropped = solve(
-                orders_copy, trucks, depot_coords,
-                max_route_miles=max_route_miles,
-                solver_time_limit=solver_time_limit,
-            )
-            st.session_state.assignments = assignments
-            st.session_state.dropped = dropped
+        anim = st.empty()
+        anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
+        assignments, dropped = solve(
+            orders_copy, trucks, depot_coords,
+            max_route_miles=max_route_miles,
+            solver_time_limit=solver_time_limit,
+        )
+        st.session_state.assignments = assignments
+        st.session_state.dropped = dropped
+        anim.markdown(_SOLVE_DONE_HTML, unsafe_allow_html=True)
 
     if not st.session_state.assignments and not st.session_state.dropped:
         return
