@@ -57,6 +57,8 @@ h2 { font-size: 12px; font-weight: bold; text-transform: uppercase;
 .company { font-size: 14px; font-weight: bold; line-height: 1.3; }
 .address { font-size: 12px; color: #444; margin-top: 3px; line-height: 1.6; }
 .sqft { font-size: 11px; color: #777; margin-top: 2px; }
+.coords { font-size: 11px; color: #555; margin-top: 2px; font-family: monospace; }
+.coords a { color: #1a5fa8; text-decoration: none; }
 .stop-notes { font-size: 11px; color: #b85c00; margin-top: 3px; }
 .priority-tag { background: #d32f2f; color: #fff; font-size: 10px;
                 padding: 1px 6px; border-radius: 3px; margin-left: 6px;
@@ -159,6 +161,14 @@ def _truck_page_html(assignment: TruckAssignment, depot_name: str, date_str: str
                 f'<a href="{stop_apple_url}" class="stop-nav-btn apple-stop-btn" '
                 f'target="_blank" rel="noopener">🍎</a>'
             )
+        coords_html = ""
+        if o.lat is not None and o.lon is not None:
+            coords_html = (
+                f'<div class="coords">'
+                f'<a href="https://www.google.com/maps/search/?api=1&query={o.lat},{o.lon}" '
+                f'target="_blank" rel="noopener">{o.lat:.5f}, {o.lon:.5f}</a>'
+                f'</div>'
+            )
         stops_html += (
             f'<div class="stop-card">'
             f'<div class="stop-num">{stop.stop_number}.</div>'
@@ -167,6 +177,7 @@ def _truck_page_html(assignment: TruckAssignment, depot_name: str, date_str: str
             f'<span class="stop-nav">{nav_links}</span></div>'
             f'<div class="address">{addr_lines}</div>'
             f'<div class="sqft">{o.capacity_units:.0f} sq ft</div>'
+            f'{coords_html}'
             f'{notes_html}'
             f'</div>'
             f'</div>'
