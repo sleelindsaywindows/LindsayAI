@@ -265,7 +265,8 @@ def render_sidebar(cfg: dict) -> dict:
                 "stop_time_minutes": stop_time,
                 "max_fill_pct": max_fill_pct,
                 "manual_truck_count": manual_truck_count,
-                "avg_speed_mph": routing.get("avg_speed_mph", 45),
+                "straight_speed_mph": routing.get("straight_speed_mph", 47),
+                "trailer_speed_mph": routing.get("trailer_speed_mph", 40),
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
                 "exclude_route_patterns": routing.get("exclude_route_patterns", []),
             },
@@ -283,7 +284,8 @@ def render_sidebar(cfg: dict) -> dict:
                 "stop_time_minutes": stop_time,
                 "max_fill_pct": max_fill_pct,
                 "manual_truck_count": manual_truck_count,
-                "avg_speed_mph": routing.get("avg_speed_mph", 45),
+                "straight_speed_mph": routing.get("straight_speed_mph", 47),
+                "trailer_speed_mph": routing.get("trailer_speed_mph", 40),
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
                 "exclude_route_patterns": routing.get("exclude_route_patterns", []),
             },
@@ -497,7 +499,8 @@ def render_load_plan(cfg: dict):
     routing_cfg = cfg.get("routing", {})
     max_route_hours = float(routing_cfg.get("max_route_hours", 9.0))
     stop_time_minutes = float(routing_cfg.get("stop_time_minutes", 45.0))
-    avg_speed_mph = float(routing_cfg.get("avg_speed_mph", 45.0))
+    straight_speed_mph = float(routing_cfg.get("straight_speed_mph", 47.0))
+    trailer_speed_mph = float(routing_cfg.get("trailer_speed_mph", 40.0))
     max_fill_pct = float(routing_cfg.get("max_fill_pct", 90)) / 100.0
     manual_truck_count = int(routing_cfg.get("manual_truck_count", 13))
     solver_time_limit = int(routing_cfg.get("solver_time_limit_seconds", 15))
@@ -557,7 +560,8 @@ def render_load_plan(cfg: dict):
                 orders_copy, trucks, depot_coords,
                 max_route_hours=max_route_hours,
                 stop_time_minutes=stop_time_minutes,
-                avg_speed_mph=avg_speed_mph,
+                straight_speed_mph=straight_speed_mph,
+                trailer_speed_mph=trailer_speed_mph,
                 solver_time_limit=solver_time_limit,
             )
             st.session_state.assignments = assignments
@@ -593,7 +597,8 @@ def render_load_plan(cfg: dict):
                 orders_copy, depot_coords,
                 max_route_hours=max_route_hours,
                 stop_time_minutes=stop_time_minutes,
-                avg_speed_mph=avg_speed_mph,
+                straight_speed_mph=straight_speed_mph,
+                trailer_speed_mph=trailer_speed_mph,
             )
             for w in warnings:
                 st.warning(f"Multi-day route flag: {w}")

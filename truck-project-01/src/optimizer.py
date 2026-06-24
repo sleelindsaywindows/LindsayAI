@@ -4,7 +4,8 @@ Capacitated Vehicle Routing Problem solver — Google OR-Tools.
 Constraint model:
   - Capacity dimension: hard floor-space cap per truck
   - Time dimension: hard daily hour cap per driver (Joseph's 9-hour rule)
-      drive_time = haversine_miles / avg_speed_mph
+      straight trucks: haversine_miles / straight_speed_mph (47 mph)
+      53-ft trailers:  haversine_miles / trailer_speed_mph  (40 mph)
       route_time = sum(drive_legs) + (stops × stop_time_minutes)
   - Fixed activation cost per truck type: fills 26-ft straight trucks before 53-ft trailers
   - Per-order truck type restrictions via VehicleVar constraints (homebuilder stops)
@@ -34,7 +35,9 @@ DISTANCE_SCALE = 1_000      # integer units per mile (thousandths of a mile) —
 TIME_SCALE = 100            # integer units per minute (hundredths of a minute) — time dimension
 MAX_ROUTE_HOURS = 9.0       # Joseph's practical daily driver cap; 11 hrs is legal max
 STOP_TIME_MINUTES = 45.0    # default unload time per stop (neighborhood delivery, no dock)
-AVG_SPEED_MPH = 45.0        # haversine → drive time; mixed GA urban/rural estimate
+STRAIGHT_SPEED_MPH = 47.0   # 26ft straight trucks — nimbler on tight residential streets
+TRAILER_SPEED_MPH = 40.0    # 53ft trailers — slower on all road types (Joseph confirmed)
+AVG_SPEED_MPH = 45.0        # fallback when truck type unknown (used in check_route_cap)
 SOLVER_TIME_LIMIT_SECONDS = 15
 
 # Must far exceed the cost of any real route so the solver never prefers
@@ -117,25 +120,26 @@ def check_route_cap(
     depot_coords: tuple[float, float],
     max_route_hours: float = MAX_ROUTE_HOURS,
     stop_time_minutes: float = STOP_TIME_MINUTES,
-    avg_speed_mph: float = AVG_SPEED_MPH,
+    straight_speed_mph: float = STRAIGHT_SPEED_MPH,
+    trailer_speed_mph: float = TRAILER_SPEED_MPH,
 ) -> list[str]:
     """
     Returns warning strings for orders whose minimum round-trip drive time already
-    exceeds max_route_hours. These will be dropped unless the cap is raised or the
-    run is flagged as a multi-day route.
+    exceeds max_route_hours. Uses the slower trailer speed for conservative flagging
+    since we don't know truck assignment at pre-flight time.
     """
     warnings = []
     for o in orders:
         if o.lat is None or o.lon is None:
             continue
         drive_miles = 2 * _haversine_miles(depot_coords[0], depot_coords[1], o.lat, o.lon)
-        drive_hours = drive_miles / avg_speed_mph
+        drive_hours = drive_miles / trailer_speed_mph  # conservative: assume slower truck
         total_hours = drive_hours + stop_time_minutes / 60
         if total_hours > max_route_hours:
             warnings.append(
                 f"Order {o.order_id} ({o.customer_name}) @ {o.address} — "
                 f"min round-trip ~{drive_hours:.1f} hr drive + {stop_time_minutes:.0f} min stop "
-                f"exceeds {max_route_hours:.0f}-hour cap. Needs a two-day run or raised cap."
+                f"exceeds {max_route_hours:.0f}-hour cap. Likely a two-day run."
             )
     return warnings
 
@@ -146,7 +150,8 @@ def solve(
     depot_coords: tuple[float, float] = (33.749, -84.388),  # Atlanta default
     max_route_hours: float = MAX_ROUTE_HOURS,
     stop_time_minutes: float = STOP_TIME_MINUTES,
-    avg_speed_mph: float = AVG_SPEED_MPH,
+    straight_speed_mph: float = STRAIGHT_SPEED_MPH,
+    trailer_speed_mph: float = TRAILER_SPEED_MPH,
     solver_time_limit: int = SOLVER_TIME_LIMIT_SECONDS,
 ) -> tuple[list[TruckAssignment], list[Order]]:
     """
@@ -154,7 +159,8 @@ def solve(
     dropped_orders is non-empty when fleet capacity is insufficient or a route
     cannot be completed within the max_route_hours time cap.
 
-    Route time = sum of drive legs (haversine / avg_speed_mph) + stops × stop_time_minutes.
+    Route time uses per-vehicle speed: straight trucks at straight_speed_mph,
+    53-ft trailers at trailer_speed_mph. Plus stop_time_minutes per delivery node.
     """
     if not orders or not trucks:
         return [], list(orders)
@@ -165,7 +171,8 @@ def solve(
     ]
 
     distance_matrix = _build_distance_matrix(coords)
-    time_matrix = _build_time_matrix(coords, avg_speed_mph)
+    straight_time_matrix = _build_time_matrix(coords, straight_speed_mph)
+    trailer_time_matrix = _build_time_matrix(coords, trailer_speed_mph)
     stop_time_scaled = round(stop_time_minutes * TIME_SCALE)
 
     SCALE = 100
@@ -200,22 +207,27 @@ def solve(
     demand_idx = routing.RegisterUnaryTransitCallback(_demand_cb)
     routing.AddDimensionWithVehicleCapacity(demand_idx, 0, capacities, True, "Capacity")
 
-    # Time dimension — drive time + stop service time at each destination.
-    # j == 0 is the depot return leg: no unload time there.
-    def _time_cb(from_idx: int, to_idx: int) -> int:
-        i = manager.IndexToNode(from_idx)
-        j = manager.IndexToNode(to_idx)
-        travel = time_matrix[i][j]
-        service = 0 if j == 0 else stop_time_scaled
-        return travel + service
+    # Time dimension — per-vehicle speed: straight trucks faster than 53-ft trailers.
+    # Each vehicle gets its own transit callback using the appropriate time matrix.
+    # j == 0 is the depot return leg: no unload time added there.
+    def _make_time_cb(matrix):
+        def _cb(from_idx: int, to_idx: int) -> int:
+            i = manager.IndexToNode(from_idx)
+            j = manager.IndexToNode(to_idx)
+            return matrix[i][j] + (0 if j == 0 else stop_time_scaled)
+        return _cb
 
-    time_transit_idx = routing.RegisterTransitCallback(_time_cb)
+    time_transit_indices = []
+    for truck in trucks:
+        tm = trailer_time_matrix if truck.truck_type == "trailer" else straight_time_matrix
+        time_transit_indices.append(routing.RegisterTransitCallback(_make_time_cb(tm)))
+
     max_time_scaled = round(max_route_hours * 60 * TIME_SCALE)
-    routing.AddDimension(
-        time_transit_idx,
-        0,                   # no waiting time slack
-        max_time_scaled,     # hard cap: max_route_hours of total route time
-        True,                # cumulative from zero at depot
+    routing.AddDimensionWithVehicleTransitAndCapacity(
+        time_transit_indices,
+        0,                              # no waiting time slack
+        [max_time_scaled] * len(trucks),
+        True,                           # cumulative from zero at depot
         "Time",
     )
 
