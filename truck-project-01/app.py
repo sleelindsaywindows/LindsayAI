@@ -471,16 +471,16 @@ def render_add_orders(cfg: dict):
 
     rows = [
         {
-            "Order ID": o.order_id,
+            "FeneVision #": getattr(o, "fenevision_ids", None) or o.order_id,
             "Customer": o.customer_name,
             "Ship-To Address": o.address,
             f"Floor Space ({abbr})": o.capacity_units,
-            "Priority": o.priority,
+            "Truck": (", ".join(getattr(o, "allowed_truck_types", None) or [])) or "any",
             "Notes": o.notes,
         }
         for o in st.session_state.orders
     ]
-    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
     if st.button("🗑 Clear All Orders"):
         st.session_state.orders = []
@@ -828,16 +828,31 @@ def render_load_plan(cfg: dict):
             with c1:
                 st.markdown("**Delivery Sequence**")
                 for stop in assignment.stops:
+                    _fv_ids = getattr(stop.order, "fenevision_ids", None)
+                    _id_label = f" · Order #{_fv_ids}" if _fv_ids else ""
                     st.markdown(
                         f"**{stop.stop_number}.** {stop.order.customer_name}  \n"
                         f"<span style='color:gray;font-size:0.85em'>"
                         f"{stop.order.address} · {stop.order.capacity_units:.0f} {abbr}"
+                        f"{_id_label}"
                         f"{'  · P' + str(stop.order.priority) if stop.order.priority > 0 else ''}"
                         f"</span>",
                         unsafe_allow_html=True,
                     )
                     if stop.order.notes:
                         st.caption(f"  Note: {stop.order.notes}")
+                    _line_items = getattr(stop.order, "line_items", None)
+                    if _line_items:
+                        _show_cols = [c for c in ["OrderNumber", "Width", "Height", "PartNo", "Qty"]
+                                      if any(c in item for item in _line_items)]
+                        if _show_cols:
+                            with st.expander(f"📋 {len(_line_items)} line items", expanded=False):
+                                _item_rows = [{c: item.get(c, "") for c in _show_cols} for item in _line_items]
+                                st.dataframe(
+                                    pd.DataFrame(_item_rows),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
             with c2:
                 st.markdown("**Load Sequence** *(load #1 first — loads deepest into truck)*")
                 for i, stop in enumerate(assignment.load_sequence, 1):

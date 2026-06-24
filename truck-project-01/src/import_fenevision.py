@@ -69,6 +69,24 @@ def import_fenevision_xlsx(
         excluded_route_names = list(df.loc[mask, "RouteName"].dropna().unique())
         df = df[~mask]
 
+    # Capture line-item detail before aggregating — one dict per xlsx row.
+    # Only include columns that actually exist in this file.
+    _DETAIL_COLS = ["OrderNumber", "LineItem", "SubLineItem", "Width", "Height", "PartNo", "Qty"]
+    _detail_available = [c for c in _DETAIL_COLS if c in df.columns]
+    _line_items_by_stop: dict = {}
+    for (route_id, stop_num), grp in df.groupby(["RouteID", "Stop"]):
+        items = []
+        for _, r in grp.iterrows():
+            item = {}
+            for col in _detail_available:
+                val = r.get(col)
+                if val is not None and not (isinstance(val, float) and pd.isna(val)):
+                    item[col] = val
+            if item:
+                items.append(item)
+        if items:
+            _line_items_by_stop[(int(route_id), int(stop_num))] = items
+
     # Aggregate line items → one row per delivery stop.
     # TruckType/TruckTypeDesc come from the route, so first() is stable within a stop.
     stop_df = (
@@ -133,6 +151,19 @@ def import_fenevision_xlsx(
         except (ValueError, TypeError):
             max_width_inches = None
 
+        _stop_key = (int(row["RouteID"]), int(row["Stop"]))
+        _line_items = _line_items_by_stop.get(_stop_key)
+
+        _fv_ids = None
+        if _line_items and "OrderNumber" in _detail_available:
+            _seen: list = []
+            for _item in _line_items:
+                _n = str(_item.get("OrderNumber", "")).strip()
+                if _n and _n not in _seen:
+                    _seen.append(_n)
+            if _seen:
+                _fv_ids = ", ".join(_seen)
+
         orders.append(Order(
             order_id=order_id,
             customer_name=str(row["shpaddr_companyname"]).strip(),
@@ -142,6 +173,8 @@ def import_fenevision_xlsx(
             notes=str(row["RouteName"]),
             allowed_truck_types=allowed,
             max_window_width_inches=max_width_inches,
+            fenevision_ids=_fv_ids,
+            line_items=_line_items,
         ))
 
     return orders, skipped, excluded_route_names

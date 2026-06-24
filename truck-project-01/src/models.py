@@ -20,6 +20,12 @@ class Order:
     # Max single-window width in inches for this stop, from FeneVision Width column.
     # Used to detect loads that would physically exceed truck bay width (96" for 26ft, 99" for 53ft).
     max_window_width_inches: Optional[float] = None
+    # Display-only: comma-separated FeneVision OrderNumbers for this stop (e.g. "1107512, 1106766").
+    # None for CSV/NL orders. Internal order_id (R-S format) is still the optimizer key.
+    fenevision_ids: Optional[str] = None
+    # Line-item detail from FeneVision (OrderNumber, Width, Height, PartNo, Qty, etc.).
+    # One dict per xlsx row. None for non-FeneVision imports.
+    line_items: Optional[List[dict]] = None
 
 
 @dataclass
