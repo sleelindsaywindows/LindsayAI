@@ -212,10 +212,23 @@ def render_sidebar(cfg: dict) -> dict:
 
     st.sidebar.subheader("Routing")
     routing = cfg.get("routing", {})
-    max_miles = st.sidebar.number_input(
-        "Max route miles / driver (HOS cap)",
-        value=float(routing.get("max_route_miles", 400)),
-        min_value=50.0, step=50.0,
+    max_hours = st.sidebar.number_input(
+        "Max route hours / driver",
+        value=float(routing.get("max_route_hours", 9.0)),
+        min_value=1.0, max_value=14.0, step=0.5,
+        help="Joseph's 9-hour cap (11 hrs is legal max; 9 gives a buffer). Includes drive + unload time.",
+    )
+    stop_time = st.sidebar.number_input(
+        "Unload time per stop (minutes)",
+        value=float(routing.get("stop_time_minutes", 45)),
+        min_value=5.0, max_value=180.0, step=5.0,
+        help="Average time to unload at each stop. 30–60 min for neighborhood deliveries without a dock.",
+    )
+    max_fill_pct = st.sidebar.slider(
+        "Max truck fill %",
+        min_value=50, max_value=100, step=5,
+        value=int(routing.get("max_fill_pct", 90)),
+        help="Optimizer won't fill trucks past this percentage. 90% leaves room for real-world loading variance.",
     )
 
     st.sidebar.subheader("Truck Fleet")
@@ -242,7 +255,10 @@ def render_sidebar(cfg: dict) -> dict:
             "trucks": updated_trucks + [{"name": "New Truck", "type": "straight", "max_capacity": 176.0, "fixed_cost": 5.0, "cost_per_mile": 0.0}],
             "depot": {"name": depot_name, "address": depot_addr},
             "routing": {
-                "max_route_miles": max_miles,
+                "max_route_hours": max_hours,
+                "stop_time_minutes": stop_time,
+                "max_fill_pct": max_fill_pct,
+                "avg_speed_mph": routing.get("avg_speed_mph", 45),
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
                 "exclude_route_patterns": routing.get("exclude_route_patterns", []),
             },
@@ -256,7 +272,10 @@ def render_sidebar(cfg: dict) -> dict:
             "trucks": updated_trucks,
             "depot": {"name": depot_name, "address": depot_addr},
             "routing": {
-                "max_route_miles": max_miles,
+                "max_route_hours": max_hours,
+                "stop_time_minutes": stop_time,
+                "max_fill_pct": max_fill_pct,
+                "avg_speed_mph": routing.get("avg_speed_mph", 45),
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
                 "exclude_route_patterns": routing.get("exclude_route_patterns", []),
             },
@@ -459,7 +478,7 @@ def _flag_address_issues(assignments):
             elif len(addr) < 15:
                 issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "Address too short — may be incomplete"))
             elif not any(ch.isdigit() for ch in addr):
-                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No street number detected"))
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No house number — may be a street-level or new construction address, verify before printing"))
             elif not _has_state(addr):
                 issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No US state detected (e.g. GA, ga)"))
     return issues
@@ -468,14 +487,17 @@ def _flag_address_issues(assignments):
 def render_load_plan(cfg: dict):
     abbr = cfg["measurement"]["abbreviation"]
     routing_cfg = cfg.get("routing", {})
-    max_route_miles = float(routing_cfg.get("max_route_miles", 400))
+    max_route_hours = float(routing_cfg.get("max_route_hours", 9.0))
+    stop_time_minutes = float(routing_cfg.get("stop_time_minutes", 45.0))
+    avg_speed_mph = float(routing_cfg.get("avg_speed_mph", 45.0))
+    max_fill_pct = float(routing_cfg.get("max_fill_pct", 90)) / 100.0
     solver_time_limit = int(routing_cfg.get("solver_time_limit_seconds", 15))
 
     trucks = [
         Truck(
             name=t["name"],
             truck_type=t["type"],
-            max_capacity=t["max_capacity"],
+            max_capacity=t["max_capacity"] * max_fill_pct,
             fixed_cost=t.get("fixed_cost", 5.0),
             cost_per_mile=t.get("cost_per_mile", 0.0),
         )
@@ -524,7 +546,9 @@ def render_load_plan(cfg: dict):
             anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
             assignments, dropped = solve(
                 orders_copy, trucks, depot_coords,
-                max_route_miles=max_route_miles,
+                max_route_hours=max_route_hours,
+                stop_time_minutes=stop_time_minutes,
+                avg_speed_mph=avg_speed_mph,
                 solver_time_limit=solver_time_limit,
             )
             st.session_state.assignments = assignments
@@ -556,7 +580,12 @@ def render_load_plan(cfg: dict):
                     if coords:
                         order.lat, order.lon = coords
 
-            warnings = check_route_cap(orders_copy, depot_coords, max_route_miles)
+            warnings = check_route_cap(
+                orders_copy, depot_coords,
+                max_route_hours=max_route_hours,
+                stop_time_minutes=stop_time_minutes,
+                avg_speed_mph=avg_speed_mph,
+            )
             for w in warnings:
                 st.warning(f"Multi-day route flag: {w}")
 
@@ -564,7 +593,9 @@ def render_load_plan(cfg: dict):
         anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
         assignments, dropped = solve(
             orders_copy, trucks, depot_coords,
-            max_route_miles=max_route_miles,
+            max_route_hours=max_route_hours,
+            stop_time_minutes=stop_time_minutes,
+            avg_speed_mph=avg_speed_mph,
             solver_time_limit=solver_time_limit,
         )
         st.session_state.assignments = assignments
@@ -601,6 +632,33 @@ def render_load_plan(cfg: dict):
         _rm3.metric("Avg Utilization", f"{_avg_util:.0f}%")
         _rm4.metric("Est. Total Miles", f"{_total_miles:.0f}" if _total_miles else "—")
 
+        # Bay width limits per truck type (inches). Windows wider than this can't physically load.
+        _BAY_WIDTH = {"straight": 96.0, "trailer": 99.0}
+        packing_issues = []
+        for a in st.session_state.assignments:
+            bay = _BAY_WIDTH.get(a.truck.truck_type, 96.0)
+            for stop in a.stops:
+                w = getattr(stop.order, 'max_window_width_inches', None)
+                if w is not None and w > bay:
+                    packing_issues.append((
+                        a.truck.name, stop.stop_number,
+                        stop.order.customer_name, w, bay,
+                    ))
+        if packing_issues:
+            with st.expander(
+                f"🚨 {len(packing_issues)} stop(s) have windows wider than the truck bay — WILL NOT FIT",
+                expanded=True,
+            ):
+                st.caption(
+                    "These windows exceed the physical bay width of their assigned truck. "
+                    "Re-assign to a wider truck or verify the window width in FeneVision."
+                )
+                for truck_name, stop_num, customer, w, bay in packing_issues:
+                    st.error(
+                        f"**{truck_name} → Stop {stop_num} — {customer}**  \n"
+                        f"Max window width {w:.0f}\" exceeds truck bay {bay:.0f}\""
+                    )
+
         addr_issues = _flag_address_issues(st.session_state.assignments)
         if addr_issues:
             with st.expander(
@@ -631,10 +689,12 @@ def render_load_plan(cfg: dict):
     st.divider()
     for assignment in st.session_state.assignments:
         dist_str = f" · {assignment.route_distance_miles:.0f} mi" if assignment.route_distance_miles else ""
+        _rth = getattr(assignment, 'route_time_hours', 0.0)
+        time_str = f" · ~{_rth:.1f} hr" if _rth else ""
         label = (
             f"🚛 {assignment.truck.name} — "
             f"{assignment.total_capacity_used:.0f}/{assignment.truck.max_capacity:.0f} {abbr} "
-            f"({assignment.utilization_pct:.0f}% utilized){dist_str}"
+            f"({assignment.utilization_pct:.0f}% utilized){dist_str}{time_str}"
         )
         with st.expander(label, expanded=True):
             c1, c2 = st.columns(2)

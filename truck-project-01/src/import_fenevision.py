@@ -81,6 +81,7 @@ def import_fenevision_xlsx(
         .agg(
             sqft_total=("sqftShippedQty", "sum"),
             truck_type_desc=("TruckTypeDesc", "first"),
+            max_width=("Width", "max"),
         )
         .reset_index()
     )
@@ -126,6 +127,12 @@ def import_fenevision_xlsx(
         truck_type = _fenevision_truck_type(row.get("truck_type_desc"))
         allowed = [truck_type] if truck_type else None
 
+        max_w = row.get("max_width")
+        try:
+            max_width_inches = float(max_w) if max_w is not None and str(max_w).lower() != "nan" else None
+        except (ValueError, TypeError):
+            max_width_inches = None
+
         orders.append(Order(
             order_id=order_id,
             customer_name=str(row["shpaddr_companyname"]).strip(),
@@ -134,6 +141,7 @@ def import_fenevision_xlsx(
             priority=0,
             notes=str(row["RouteName"]),
             allowed_truck_types=allowed,
+            max_window_width_inches=max_width_inches,
         ))
 
     return orders, skipped, excluded_route_names

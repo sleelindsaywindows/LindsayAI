@@ -1,23 +1,15 @@
 """
 Capacitated Vehicle Routing Problem solver — Google OR-Tools.
 
-Merges the best of two iterations:
-  From LyndsayWindowsLLC (Streamlit build):
-    - Priority weighting in the distance callback (urgent orders served first)
-    - LIFO load sequence (enforced in TruckAssignment model, not here)
-    - Graceful geocoding degradation (works without geopy)
-    - Streamlit-compatible return type
-
-  From LW-Storage-and-Shipping-Basic (AWLindsay prototype):
-    - Fixed activation cost per vehicle type (fills 26-ft trucks before 53-ft trailers)
-    - Hard distance cap per truck per day (HOS compliance)
-    - Soft disjunctions — dropped orders reported, never silently lost
-    - Pre-flight route cap check for multi-day orders
-    - Input validation before solver
-    - Distance in miles × 1000 (matches domain language; precise for dense stops)
-    - Dropped order detection via NextVar self-reference
-
-Node 0 = depot; nodes 1..N = orders.
+Constraint model:
+  - Capacity dimension: hard floor-space cap per truck
+  - Time dimension: hard daily hour cap per driver (Joseph's 9-hour rule)
+      drive_time = haversine_miles / avg_speed_mph
+      route_time = sum(drive_legs) + (stops × stop_time_minutes)
+  - Fixed activation cost per truck type: fills 26-ft straight trucks before 53-ft trailers
+  - Per-order truck type restrictions via VehicleVar constraints (homebuilder stops)
+  - Soft disjunctions: dropped orders reported explicitly, never silently lost
+  - Priority weighting in arc cost: urgent orders pulled to earlier stops
 """
 
 import math
@@ -38,8 +30,11 @@ except ImportError:
 
 # --- Solver constants (overridable via solve() parameters) ----------------------
 
-DISTANCE_SCALE = 1_000          # integer units per mile (thousandths of a mile)
-MAX_ROUTE_MILES = 400           # default hard daily distance cap per driver (HOS)
+DISTANCE_SCALE = 1_000      # integer units per mile (thousandths of a mile) — cost callback only
+TIME_SCALE = 100            # integer units per minute (hundredths of a minute) — time dimension
+MAX_ROUTE_HOURS = 9.0       # Joseph's practical daily driver cap; 11 hrs is legal max
+STOP_TIME_MINUTES = 45.0    # default unload time per stop (neighborhood delivery, no dock)
+AVG_SPEED_MPH = 45.0        # haversine → drive time; mixed GA urban/rural estimate
 SOLVER_TIME_LIMIT_SECONDS = 15
 
 # Must far exceed the cost of any real route so the solver never prefers
@@ -48,8 +43,6 @@ UNASSIGNED_ORDER_PENALTY = 10_000_000
 
 # Priority penalty: 1 priority point = 2 equivalent miles.
 # Full 10-point gap (normal → urgent) = 20-mile detour budget.
-# Calibrated so urgent orders always lead the route in metro areas
-# without enabling absurd cross-state detours.
 PRIORITY_WEIGHT_MILES = 2
 
 
@@ -73,11 +66,28 @@ def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
 
 
 def _build_distance_matrix(coords: list[tuple[float, float]]) -> list[list[int]]:
+    """Distance in DISTANCE_SCALE units (thousandths of a mile). Used for arc cost only."""
     n = len(coords)
     return [
         [
             0 if i == j
             else round(_haversine_miles(*coords[i], *coords[j]) * DISTANCE_SCALE)
+            for j in range(n)
+        ]
+        for i in range(n)
+    ]
+
+
+def _build_time_matrix(
+    coords: list[tuple[float, float]],
+    avg_speed_mph: float = AVG_SPEED_MPH,
+) -> list[list[int]]:
+    """Travel-only time in TIME_SCALE units (hundredths of a minute). Stop time added separately."""
+    n = len(coords)
+    return [
+        [
+            0 if i == j
+            else round(_haversine_miles(*coords[i], *coords[j]) / avg_speed_mph * 60 * TIME_SCALE)
             for j in range(n)
         ]
         for i in range(n)
@@ -105,23 +115,27 @@ def validate_inputs(orders: list[Order], trucks: list[Truck]) -> list[str]:
 def check_route_cap(
     orders: list[Order],
     depot_coords: tuple[float, float],
-    max_route_miles: float = MAX_ROUTE_MILES,
+    max_route_hours: float = MAX_ROUTE_HOURS,
+    stop_time_minutes: float = STOP_TIME_MINUTES,
+    avg_speed_mph: float = AVG_SPEED_MPH,
 ) -> list[str]:
     """
-    Returns warning strings for orders whose minimum round-trip already exceeds
-    max_route_miles. These will be dropped by the solver unless the cap is raised
-    or the run is split into a multi-day route (NC/VA pattern).
+    Returns warning strings for orders whose minimum round-trip drive time already
+    exceeds max_route_hours. These will be dropped unless the cap is raised or the
+    run is flagged as a multi-day route.
     """
     warnings = []
     for o in orders:
         if o.lat is None or o.lon is None:
             continue
-        min_rt = 2 * _haversine_miles(depot_coords[0], depot_coords[1], o.lat, o.lon)
-        if min_rt > max_route_miles:
+        drive_miles = 2 * _haversine_miles(depot_coords[0], depot_coords[1], o.lat, o.lon)
+        drive_hours = drive_miles / avg_speed_mph
+        total_hours = drive_hours + stop_time_minutes / 60
+        if total_hours > max_route_hours:
             warnings.append(
                 f"Order {o.order_id} ({o.customer_name}) @ {o.address} — "
-                f"min round-trip ~{min_rt:.0f} mi exceeds {max_route_miles}-mile cap. "
-                f"Needs a two-day run or raised cap."
+                f"min round-trip ~{drive_hours:.1f} hr drive + {stop_time_minutes:.0f} min stop "
+                f"exceeds {max_route_hours:.0f}-hour cap. Needs a two-day run or raised cap."
             )
     return warnings
 
@@ -130,13 +144,17 @@ def solve(
     orders: list[Order],
     trucks: list[Truck],
     depot_coords: tuple[float, float] = (33.749, -84.388),  # Atlanta default
-    max_route_miles: float = MAX_ROUTE_MILES,
+    max_route_hours: float = MAX_ROUTE_HOURS,
+    stop_time_minutes: float = STOP_TIME_MINUTES,
+    avg_speed_mph: float = AVG_SPEED_MPH,
     solver_time_limit: int = SOLVER_TIME_LIMIT_SECONDS,
 ) -> tuple[list[TruckAssignment], list[Order]]:
     """
     Returns (assignments, dropped_orders).
-    dropped_orders is non-empty when fleet capacity is insufficient or an order
-    physically cannot be served within the route distance cap.
+    dropped_orders is non-empty when fleet capacity is insufficient or a route
+    cannot be completed within the max_route_hours time cap.
+
+    Route time = sum of drive legs (haversine / avg_speed_mph) + stops × stop_time_minutes.
     """
     if not orders or not trucks:
         return [], list(orders)
@@ -147,17 +165,18 @@ def solve(
     ]
 
     distance_matrix = _build_distance_matrix(coords)
+    time_matrix = _build_time_matrix(coords, avg_speed_mph)
+    stop_time_scaled = round(stop_time_minutes * TIME_SCALE)
 
     SCALE = 100
     demands = [0] + [int(o.capacity_units * SCALE) for o in orders]
     capacities = [int(t.max_capacity * SCALE) for t in trucks]
-    priorities = [10] + [o.priority for o in orders]  # depot gets max priority
+    priorities = [10] + [o.priority for o in orders]
 
     manager = pywrapcp.RoutingIndexManager(len(coords), len(trucks), 0)
     routing = pywrapcp.RoutingModel(manager)
 
-    # Cost callback includes priority penalty — encourages serving urgent orders first.
-    # Guard j==0: never penalise return-to-depot arcs.
+    # Arc cost: distance with priority penalty (encourages serving urgent orders first).
     def _dist_cb(from_idx: int, to_idx: int) -> int:
         i = manager.IndexToNode(from_idx)
         j = manager.IndexToNode(to_idx)
@@ -170,45 +189,47 @@ def solve(
     transit_idx = routing.RegisterTransitCallback(_dist_cb)
     routing.SetArcCostEvaluatorOfAllVehicles(transit_idx)
 
-    # Fixed activation cost per truck type — steers solver to fill 26-ft trucks
-    # before activating 53-ft trailers (fixed_cost in config.yaml, equivalent miles).
+    # Fixed activation cost: steers solver to fill straight trucks before trailers.
     for v_idx, truck in enumerate(trucks):
         routing.SetFixedCostOfVehicle(int(truck.fixed_cost * DISTANCE_SCALE), v_idx)
 
+    # Capacity dimension.
     def _demand_cb(from_idx: int) -> int:
         return demands[manager.IndexToNode(from_idx)]
 
     demand_idx = routing.RegisterUnaryTransitCallback(_demand_cb)
     routing.AddDimensionWithVehicleCapacity(demand_idx, 0, capacities, True, "Capacity")
 
-    # Raw distance callback (no priority penalty) — used for the HOS distance cap.
-    def _raw_dist_cb(from_idx: int, to_idx: int) -> int:
-        return distance_matrix[manager.IndexToNode(from_idx)][manager.IndexToNode(to_idx)]
+    # Time dimension — drive time + stop service time at each destination.
+    # j == 0 is the depot return leg: no unload time there.
+    def _time_cb(from_idx: int, to_idx: int) -> int:
+        i = manager.IndexToNode(from_idx)
+        j = manager.IndexToNode(to_idx)
+        travel = time_matrix[i][j]
+        service = 0 if j == 0 else stop_time_scaled
+        return travel + service
 
-    raw_transit_idx = routing.RegisterTransitCallback(_raw_dist_cb)
+    time_transit_idx = routing.RegisterTransitCallback(_time_cb)
+    max_time_scaled = round(max_route_hours * 60 * TIME_SCALE)
     routing.AddDimension(
-        raw_transit_idx,
-        0,
-        int(max_route_miles * DISTANCE_SCALE),
-        True,
-        "Distance",
+        time_transit_idx,
+        0,                   # no waiting time slack
+        max_time_scaled,     # hard cap: max_route_hours of total route time
+        True,                # cumulative from zero at depot
+        "Time",
     )
 
-    # Truck type restrictions — if an order specifies allowed_truck_types, forbid
-    # all incompatible vehicles from serving that node via VehicleVar constraints.
-    # OR-Tools 9.x SetAllowedVehiclesForIndex does not accept Python sequences;
-    # using VehicleVar != forbidden_vehicle constraints achieves the same result.
+    # Truck type restrictions — homebuilder stops that can't accept a 53-ft trailer.
     cp_solver = routing.solver()
     for order_idx, order in enumerate(orders):
         if order.allowed_truck_types:
-            node_index = manager.NodeToIndex(order_idx + 1)  # node 0 = depot
+            node_index = manager.NodeToIndex(order_idx + 1)
             vehicle_var = routing.VehicleVar(node_index)
             for v_idx, truck in enumerate(trucks):
                 if truck.truck_type not in order.allowed_truck_types:
                     cp_solver.Add(vehicle_var != v_idx)
 
-    # Soft constraint — allows solver to drop an order and report it rather than
-    # returning no solution when fleet capacity is insufficient.
+    # Soft constraint — dropped orders reported rather than causing solver failure.
     for node in range(1, len(distance_matrix)):
         routing.AddDisjunction([manager.NodeToIndex(node)], UNASSIGNED_ORDER_PENALTY)
 
@@ -220,6 +241,8 @@ def solve(
     solution = routing.SolveWithParameters(params)
     if not solution:
         return [], list(orders)
+
+    time_dim = routing.GetDimensionOrDie("Time")
 
     assignments = []
     for v_idx, truck in enumerate(trucks):
@@ -236,10 +259,12 @@ def solve(
             route_dist += distance_matrix[manager.IndexToNode(idx)][manager.IndexToNode(next_idx)]
             idx = next_idx
         if stops:
+            end_time_scaled = solution.Value(time_dim.CumulVar(routing.End(v_idx)))
             assignments.append(TruckAssignment(
                 truck=truck,
                 stops=stops,
                 route_distance_miles=route_dist / DISTANCE_SCALE,
+                route_time_hours=end_time_scaled / TIME_SCALE / 60,
             ))
 
     # Detect dropped orders: a dropped node's NextVar points to itself.

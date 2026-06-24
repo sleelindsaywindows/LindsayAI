@@ -17,6 +17,9 @@ class Order:
     # a future customer-level lookup table.
     # Example: ["straight"] means only 26-ft straight trucks; ["trailer"] means only 53-ft.
     allowed_truck_types: Optional[List[str]] = None
+    # Max single-window width in inches for this stop, from FeneVision Width column.
+    # Used to detect loads that would physically exceed truck bay width (96" for 26ft, 99" for 53ft).
+    max_window_width_inches: Optional[float] = None
 
 
 @dataclass
@@ -39,6 +42,7 @@ class TruckAssignment:
     truck: Truck
     stops: list             # list[RouteStop] in delivery order
     route_distance_miles: float = 0.0
+    route_time_hours: float = 0.0
 
     @property
     def load_sequence(self) -> list:
