@@ -955,6 +955,11 @@ def render_load_plan(cfg: dict):
                             _s[s_idx], _s[s_idx - 1] = _s[s_idx - 1], _s[s_idx]
                             for _n, _stp in enumerate(_s, 1):
                                 _stp.stop_number = _n
+                            _spd = straight_speed_mph if _all_asgn[v_idx].truck.truck_type == "straight" else trailer_speed_mph
+                            _all_asgn[v_idx].route_time_hours = (
+                                (_all_asgn[v_idx].route_distance_miles / _spd if _all_asgn[v_idx].route_distance_miles else 0.0)
+                                + len(_s) * stop_time_minutes / 60
+                            )
                             st.rerun()
                         if st.button("↓", key=f"mv_dn_{v_idx}_{s_idx}",
                                      disabled=(s_idx == _n_stops - 1), use_container_width=True):
@@ -962,6 +967,11 @@ def render_load_plan(cfg: dict):
                             _s[s_idx], _s[s_idx + 1] = _s[s_idx + 1], _s[s_idx]
                             for _n, _stp in enumerate(_s, 1):
                                 _stp.stop_number = _n
+                            _spd = straight_speed_mph if _all_asgn[v_idx].truck.truck_type == "straight" else trailer_speed_mph
+                            _all_asgn[v_idx].route_time_hours = (
+                                (_all_asgn[v_idx].route_distance_miles / _spd if _all_asgn[v_idx].route_distance_miles else 0.0)
+                                + len(_s) * stop_time_minutes / 60
+                            )
                             st.rerun()
                         # Move to different truck
                         if len(_all_asgn) > 1:
@@ -985,6 +995,13 @@ def render_load_plan(cfg: dict):
                                     _stp.stop_number = _n
                                 for _n, _stp in enumerate(_all_asgn[_dest_idx].stops, 1):
                                     _stp.stop_number = _n
+                                # recalc time for both affected trucks
+                                for _ti in [v_idx, _dest_idx]:
+                                    _spd = straight_speed_mph if _all_asgn[_ti].truck.truck_type == "straight" else trailer_speed_mph
+                                    _all_asgn[_ti].route_time_hours = (
+                                        (_all_asgn[_ti].route_distance_miles / _spd if _all_asgn[_ti].route_distance_miles else 0.0)
+                                        + len(_all_asgn[_ti].stops) * stop_time_minutes / 60
+                                    )
                                 # drop truck if now empty
                                 st.session_state.assignments = [
                                     a for a in _all_asgn if a.stops
@@ -1086,6 +1103,7 @@ def render_analysis(cfg: dict):
 
     abbr = cfg["measurement"]["abbreviation"]
     has_miles = any(a.route_distance_miles for a in assignments)
+    routing_cfg = cfg.get("routing", {})
 
     # --- Summary table ---
     st.subheader("Summary")
