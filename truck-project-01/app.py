@@ -96,6 +96,7 @@ def init_state():
         "auto_run_pending": False,
         "first_visit": True,     # drives one-time onboarding modal
         "onboarding_slide": 0,
+        "_ob_navigating": False, # True only when a slide nav button was just clicked
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -185,14 +186,15 @@ def _onboarding_modal():
     if idx > 0:
         if col_back.button("← Back", key="ob_back"):
             st.session_state.onboarding_slide = idx - 1
+            st.session_state._ob_navigating = True
             st.rerun()
     if idx < len(slides) - 1:
         if col_next.button("Next →", key="ob_next", type="primary"):
             st.session_state.onboarding_slide = idx + 1
+            st.session_state._ob_navigating = True
             st.rerun()
     else:
         if col_next.button("Got it!", type="primary", key="ob_done"):
-            st.session_state.first_visit = False
             st.session_state.onboarding_slide = 0
             st.session_state._jump_orders = True
             st.rerun()
@@ -609,7 +611,8 @@ def render_load_plan(cfg: dict):
             orders_copy, trucks, depot_coords,
             max_route_hours=max_route_hours,
             stop_time_minutes=stop_time_minutes,
-            avg_speed_mph=avg_speed_mph,
+            straight_speed_mph=straight_speed_mph,
+            trailer_speed_mph=trailer_speed_mph,
             solver_time_limit=solver_time_limit,
         )
         st.session_state.assignments = assignments
@@ -952,7 +955,11 @@ def main():
     st.set_page_config(page_title="Lindsay Windows — Load Planner", page_icon="🪟", layout="wide")
     init_state()
 
+    _should_show_modal = st.session_state.first_visit or st.session_state.get("_ob_navigating", False)
     if st.session_state.first_visit:
+        st.session_state.first_visit = False  # dismiss X won't re-trigger
+    if _should_show_modal:
+        st.session_state._ob_navigating = False  # consumed; nav buttons re-set it if needed
         _onboarding_modal()
 
     cfg = load_config()
