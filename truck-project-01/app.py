@@ -131,7 +131,7 @@ def _onboarding_modal():
             "#e65100",
             "**Analysis** shows utilization per truck, a homebuilder constraint audit "
             "(flags any stop assigned to the wrong truck type), and a cost comparison "
-            "against Joseph's manual routes. Export an Excel report from here.",
+            "against the current manual routing process. Export an Excel report from here.",
         ),
         (
             "🖨️ Print for drivers",
@@ -151,12 +151,13 @@ def _onboarding_modal():
     title, accent, body = slides[idx]
 
     # Progress dots
-    dots = "".join(
-        f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
-        f'background:{"' + accent + '" if i == idx else "#dde3ea"};margin:0 5px;'
-        f'transition:background 0.3s;"></span>'
-        for i in range(len(slides))
-    )
+    dots = ""
+    for i in range(len(slides)):
+        color = accent if i == idx else "#dde3ea"
+        dots += (
+            f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+            f'background:{color};margin:0 5px;transition:background 0.3s;"></span>'
+        )
 
     st.markdown(
         f"""
@@ -265,7 +266,7 @@ def render_sidebar(cfg: dict) -> dict:
         st.rerun()
 
     st.sidebar.divider()
-    if st.sidebar.button("Need Help?", use_container_width=True):
+    if st.sidebar.button("Need Help?", key="sidebar_help", use_container_width=True):
         st.session_state.first_visit = True
         st.session_state.onboarding_slide = 0
         st.rerun()
@@ -301,11 +302,13 @@ def render_add_orders(cfg: dict):
             st.session_state.dropped = []
             st.session_state.uploader_key += 1
             st.session_state.auto_run_pending = True
-            msg = f"Loaded {len(new_orders)} stops from FeneVision."
+            st.session_state._jump_plan = True
+            msg = f"✅ {len(new_orders)} stops loaded"
             if excluded:
-                msg += f" {len(excluded)} route(s) excluded by pattern filter."
+                msg += f" · {len(excluded)} interplant route(s) excluded"
             if skipped:
-                msg += f" {len(skipped)} placeholder stop(s) skipped (sqft below threshold)."
+                msg += f" · {len(skipped)} placeholder stop(s) skipped"
+            msg += " — heading to Load Plan to optimize…"
             st.success(msg)
             st.rerun()
 
@@ -346,7 +349,7 @@ def render_add_orders(cfg: dict):
             st.rerun()
 
     st.divider()
-    st.subheader("Add via Natural Language")
+    st.subheader("Add in Plain English")
     has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
     if not has_key:
         st.warning("ANTHROPIC_API_KEY not set — add it to your .env file to enable NL parsing. "
@@ -432,11 +435,20 @@ def render_add_orders(cfg: dict):
 
 
 _ADDR_PLACEHOLDERS = {"none", "n/a", "tbd", "unknown", "na", ""}
+_US_STATES = {
+    "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA","KS",
+    "KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY",
+    "NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV",
+    "WI","WY","DC",
+}
+import re as _re
+_WORD_RE = _re.compile(r'\b[A-Za-z]{2}\b')
+
+def _has_state(addr: str) -> bool:
+    return any(w.upper() in _US_STATES for w in _WORD_RE.findall(addr))
 
 def _flag_address_issues(assignments):
     """Return list of (truck_name, stop_num, customer, address, issue) for suspect addresses."""
-    import re
-    _STATE_RE = re.compile(r'\b[A-Z]{2}\b')
     issues = []
     for a in assignments:
         for stop in a.stops:
@@ -448,8 +460,8 @@ def _flag_address_issues(assignments):
                 issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "Address too short — may be incomplete"))
             elif not any(ch.isdigit() for ch in addr):
                 issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No street number detected"))
-            elif not _STATE_RE.search(addr):
-                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No state abbreviation detected"))
+            elif not _has_state(addr):
+                issues.append((a.truck.name, stop.stop_number, stop.order.customer_name, addr, "No US state detected (e.g. GA, ga)"))
     return issues
 
 
@@ -489,12 +501,19 @@ def render_load_plan(cfg: dict):
     if total_needed > fleet_cap:
         st.error(f"Orders exceed fleet capacity by {total_needed - fleet_cap:.0f} {abbr}. Add trucks or remove orders.")
 
-    geocode_on = st.checkbox(
-        "Geocode addresses for distance-based routing (uses free Nominatim — may be slow)",
-        value=False,
-        disabled=not GEOCODING_AVAILABLE,
-        help="Install geopy to enable: pip install geopy" if not GEOCODING_AVAILABLE else "",
-    )
+    with st.expander("⚙️ Distance routing (optional — off by default)", expanded=False):
+        st.caption(
+            "By default the optimizer assigns stops to trucks without real driving distances — "
+            "it still produces valid load plans, just with unoptimized stop order within each truck. "
+            "Enable geocoding to add real distance-based sequencing (Haversine straight-line, ~5 min for 50 stops). "
+            "Swap for OSRM or Google Maps Distance Matrix API when you're ready for true road distances."
+        )
+        geocode_on = st.checkbox(
+            "Enable geocoding (uses free Nominatim — slow on large loads)",
+            value=False,
+            disabled=not GEOCODING_AVAILABLE,
+            help="Install geopy to enable: pip install geopy" if not GEOCODING_AVAILABLE else "",
+        )
 
     if st.session_state.get("auto_run_pending") and st.session_state.orders:
         orders_copy = copy.deepcopy(st.session_state.orders)
@@ -572,6 +591,16 @@ def render_load_plan(cfg: dict):
             key="banner_html_download",
         )
 
+        _asgn = st.session_state.assignments
+        _total_stops = sum(len(a.stops) for a in _asgn)
+        _avg_util = sum(a.utilization_pct for a in _asgn) / len(_asgn) if _asgn else 0
+        _total_miles = sum(a.route_distance_miles for a in _asgn if a.route_distance_miles)
+        _rm1, _rm2, _rm3, _rm4 = st.columns(4)
+        _rm1.metric("Trucks Used", len(_asgn))
+        _rm2.metric("Total Stops", _total_stops)
+        _rm3.metric("Avg Utilization", f"{_avg_util:.0f}%")
+        _rm4.metric("Est. Total Miles", f"{_total_miles:.0f}" if _total_miles else "—")
+
         addr_issues = _flag_address_issues(st.session_state.assignments)
         if addr_issues:
             with st.expander(
@@ -623,7 +652,7 @@ def render_load_plan(cfg: dict):
                     if stop.order.notes:
                         st.caption(f"  Note: {stop.order.notes}")
             with c2:
-                st.markdown("**Load Sequence** *(load #1 first — goes in deepest)*")
+                st.markdown("**Load Sequence** *(load #1 first — loads deepest into truck)*")
                 for i, stop in enumerate(assignment.load_sequence, 1):
                     st.markdown(f"**Load {i}.** {stop.order.customer_name} — {stop.order.capacity_units:.0f} {abbr}")
 
@@ -713,6 +742,13 @@ def render_analysis(cfg: dict):
 
     # --- Utilization bar chart ---
     st.subheader("Utilization % per Truck")
+    st.caption(
+        "Utilization = sq ft used ÷ truck capacity. "
+        "**85–95% is the target range** — high enough to avoid wasting truck space, "
+        "low enough to handle real-world variation (odd-sized windows, last-minute adds). "
+        "100% means zero buffer; anything that doesn't fit gets dropped. "
+        "Under 70% usually means a truck could be consolidated."
+    )
     chart_data = pd.DataFrame(
         {"Utilization %": [a.utilization_pct for a in assignments]},
         index=[a.truck.name for a in assignments],
@@ -726,6 +762,13 @@ def render_analysis(cfg: dict):
 
     # --- Constraint audit ---
     st.subheader("Homebuilder Truck-Type Constraint Audit")
+    st.caption(
+        "Some customers — typically homebuilders in residential subdivisions — physically cannot "
+        "receive a 53-ft trailer (tight driveways, low-clearance streets). These stops are flagged "
+        "in FeneVision with a 26-ft truck type. The optimizer enforces this constraint so they are "
+        "never assigned to a trailer. **PASS = all restricted stops landed on 26-ft straight trucks.** "
+        "A FAIL here means a driver would show up with the wrong truck and couldn't deliver."
+    )
     restricted = [
         (a, stop)
         for a in assignments
@@ -779,14 +822,14 @@ def render_analysis(cfg: dict):
     avg_util = round(sum(util_values) / len(util_values), 1) if util_values else 0.0
 
     comp_rows = [
-        {"Metric": "Trucks Used", "Optimizer": len(assignments), "Joseph's Manual": 13},
-        {"Metric": "Total Est. Miles", "Optimizer": round(total_miles, 1) if has_miles else "N/A", "Joseph's Manual": "unknown"},
-        {"Metric": "Total Est. Cost ($)", "Optimizer": round(total_cost, 2) if has_miles else "N/A", "Joseph's Manual": "unknown"},
-        {"Metric": "Avg Utilization %", "Optimizer": avg_util, "Joseph's Manual": "unknown"},
-        {"Metric": "Dropped Orders", "Optimizer": len(dropped), "Joseph's Manual": "unknown"},
+        {"Metric": "Trucks Used", "Optimizer": len(assignments), "Current Process": 13},
+        {"Metric": "Total Est. Miles", "Optimizer": round(total_miles, 1) if has_miles else "N/A", "Current Process": "unknown"},
+        {"Metric": "Total Est. Cost ($)", "Optimizer": round(total_cost, 2) if has_miles else "N/A", "Current Process": "unknown"},
+        {"Metric": "Avg Utilization %", "Optimizer": avg_util, "Current Process": "unknown"},
+        {"Metric": "Dropped Orders", "Optimizer": len(dropped), "Current Process": "unknown"},
     ]
     st.dataframe(pd.DataFrame(comp_rows), use_container_width=True)
-    st.caption("Joseph's manual cost computable once his 6/17 route sheet is entered.")
+    st.caption("Current process cost computable once the 6/17 manual route sheet is entered.")
 
     st.divider()
 
@@ -845,6 +888,44 @@ def main():
             "}catch(e){}},400);</script>",
             height=0,
         )
+    if st.session_state.get("_jump_plan"):
+        st.session_state._jump_plan = False
+        st.components.v1.html(
+            "<script>setTimeout(function(){try{"
+            "var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');"
+            "if(t&&t.length>1)t[1].click();"
+            "}catch(e){}},400);</script>",
+            height=0,
+        )
+
+    st.components.v1.html("""
+<script>
+(function(){
+  var doc = window.parent.document;
+  var existing = doc.getElementById('lw-help-fab');
+  if (existing) existing.remove();
+  var btn = doc.createElement('button');
+  btn.id = 'lw-help-fab';
+  btn.innerHTML = '&#10067; Need Help?';
+  btn.style.cssText = [
+    'position:fixed','bottom:24px','right:24px','z-index:999999',
+    'background:#1a5fa8','color:#fff','border:none','border-radius:20px',
+    'padding:10px 20px','font-size:14px','font-weight:600','cursor:pointer',
+    'box-shadow:0 4px 16px rgba(26,95,168,0.4)','font-family:Arial,sans-serif',
+    'transition:transform 0.15s,box-shadow 0.15s','letter-spacing:0.2px'
+  ].join(';');
+  btn.onmouseover = function(){ this.style.transform='scale(1.05)'; this.style.boxShadow='0 6px 20px rgba(26,95,168,0.55)'; };
+  btn.onmouseout  = function(){ this.style.transform='scale(1)';    this.style.boxShadow='0 4px 16px rgba(26,95,168,0.4)'; };
+  btn.onclick = function(){
+    var all = doc.querySelectorAll('button');
+    for(var i=0;i<all.length;i++){
+      if(all[i].innerText.trim()==='Need Help?'){ all[i].click(); return; }
+    }
+  };
+  doc.body.appendChild(btn);
+})();
+</script>
+""", height=0)
 
     plan_label = "Load Plan ✓" if st.session_state.assignments else "Load Plan"
     tab_orders, tab_plan, tab_analysis = st.tabs(["Add Orders", plan_label, "Analysis"])

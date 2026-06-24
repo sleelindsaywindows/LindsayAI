@@ -173,7 +173,7 @@ def _truck_page_html(assignment: TruckAssignment, depot_name: str, date_str: str
         )
     stops_html += "</div>"
 
-    lifo_html = '<div class="lifo-section"><h2>Loading Order — Load #1 first (goes in deepest)</h2>'
+    lifo_html = '<div class="lifo-section"><h2>Loading Order — Load #1 first (loads deepest into truck)</h2>'
     for i, stop in enumerate(assignment.load_sequence, 1):
         lifo_html += (
             f'<div class="load-row">'

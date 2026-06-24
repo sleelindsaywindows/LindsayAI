@@ -191,7 +191,7 @@ def _sheet_detail(wb, assignments: list, dropped: list):
 
 def _sheet_cost(wb, assignments: list, dropped: list, josephs_truck_count: int):
     ws = wb.create_sheet("Cost Comparison")
-    _header_row(ws, ["Metric", "Optimizer", "Joseph's Manual"], 1)
+    _header_row(ws, ["Metric", "Optimizer", "Current Process"], 1)
 
     total_miles = sum(a.route_distance_miles for a in assignments if a.route_distance_miles)
     total_cost = sum(
@@ -218,7 +218,7 @@ def _sheet_cost(wb, assignments: list, dropped: list, josephs_truck_count: int):
     note_row = len(rows) + 3
     ws.cell(
         row=note_row, column=1,
-        value="Note: Joseph's manual cost computable once his 6/17 route sheet is entered.",
+        value="Note: Current process cost computable once the 6/17 manual route sheet is entered.",
     ).font = Font(italic=True)
     if not has_miles:
         ws.cell(
@@ -279,7 +279,7 @@ def generate_report(
     Generate Excel workbook with 4 sheets:
       1. Summary — truck utilization + cost table + charts
       2. Per-Route Detail — every stop with yellow homebuilder highlight, red dropped
-      3. Cost Comparison — optimizer vs Joseph's manual routes
+      3. Cost Comparison — optimizer vs current manual routing process
       4. Constraint Audit — homebuilder truck-type constraint PASS/FAIL per stop
 
     Returns output_path. Prints warning to stderr if any constraint FAILs.

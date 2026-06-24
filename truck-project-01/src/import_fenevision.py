@@ -102,11 +102,17 @@ def import_fenevision_xlsx(
             continue
 
         # Build address string from components
+        # ZipCode comes in as float (e.g. 30507.0) — cast to int to strip the decimal
+        zip_raw = row["ShpAddr_ZipCode"]
+        try:
+            zip_str = str(int(float(zip_raw))) if zip_raw and str(zip_raw).lower() != "nan" else ""
+        except (ValueError, TypeError):
+            zip_str = str(zip_raw).strip()
         parts = [
             str(row["ShpAddr_Address1"]).strip(),
             str(row["ShpAddr_City"]).strip(),
             str(row["ShpAddr_State"]).strip(),
-            str(row["ShpAddr_ZipCode"]).strip(),
+            zip_str,
         ]
         address = " ".join(p for p in parts if p and p.lower() != "nan")
 
