@@ -377,10 +377,35 @@ def render_add_orders(cfg: dict):
         _routing_cfg = cfg.get("routing", {})
         exclude_patterns = _routing_cfg.get("exclude_route_patterns", ["Lindsay MO"])
         min_sqft_import = float(_routing_cfg.get("min_sqft_threshold", 5.0))
+
+        # Auto-detect sheet name: try default, then let user pick if not found.
+        import openpyxl
+        _wb = openpyxl.load_workbook(fv_file, read_only=True, data_only=True)
+        _sheet_names = _wb.sheetnames
+        _wb.close()
+        fv_file.seek(0)  # reset after openpyxl read
+
+        _DEFAULT_SHEET = "Orders by Route"
+        _sheet_candidates = [s for s in _sheet_names if "order" in s.lower() or "route" in s.lower()]
+        if _DEFAULT_SHEET in _sheet_names:
+            _chosen_sheet = _DEFAULT_SHEET
+        elif len(_sheet_candidates) == 1:
+            _chosen_sheet = _sheet_candidates[0]
+        else:
+            _chosen_sheet = st.selectbox(
+                f"Sheet not found: '{_DEFAULT_SHEET}'. Pick the orders sheet:",
+                options=_sheet_names,
+                index=0,
+                key="fv_sheet_picker",
+            )
+            if not st.button("Load selected sheet", key="fv_sheet_confirm"):
+                st.stop()
+
         try:
             with st.spinner("Reading FeneVision file…"):
                 new_orders, skipped, excluded = import_fenevision_xlsx(
                     fv_file,
+                    sheet_name=_chosen_sheet,
                     exclude_route_patterns=exclude_patterns,
                     min_sqft=min_sqft_import,
                 )
