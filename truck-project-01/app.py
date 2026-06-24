@@ -134,7 +134,7 @@ def _onboarding_modal():
             "#e65100",
             "**Analysis** shows utilization per truck, a homebuilder constraint audit "
             "(flags any stop assigned to the wrong truck type), and a cost comparison "
-            "against the current manual routing process. Export an Excel report from here.",
+            "against unoptimized routing. Export an Excel report from here.",
         ),
         (
             "🖨️ Print for drivers",
@@ -235,10 +235,10 @@ def render_sidebar(cfg: dict) -> dict:
         help="Optimizer won't fill trucks past this percentage. 90% leaves room for real-world loading variance.",
     )
     manual_truck_count = st.sidebar.number_input(
-        "Manual route count (for comparison)",
+        "Unoptimized route count (for comparison)",
         value=int(routing.get("manual_truck_count", 13)),
         min_value=1, step=1,
-        help="How many trucks were used in the current manual process. Used to compute trucks saved.",
+        help="How many trucks the current unoptimized process used. Enter the number from Joseph's manual routing for the same day.",
     )
 
     st.sidebar.subheader("Import Filters")
@@ -551,12 +551,15 @@ def render_load_plan(cfg: dict):
 
     total_needed = sum(o.capacity_units for o in st.session_state.orders)
     fleet_cap = sum(t.max_capacity for t in trucks)
+    fleet_util_pct = (total_needed / fleet_cap * 100) if fleet_cap else 0
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Orders", len(st.session_state.orders))
-    m2.metric(f"Space Needed ({abbr})", f"{total_needed:.0f}")
-    m3.metric(f"Fleet Capacity ({abbr})", f"{fleet_cap:.0f}")
-    m4.metric("Fleet Utilization", f"{(total_needed / fleet_cap * 100) if fleet_cap else 0:.0f}%")
+    m1.metric("Stops to Deliver", len(st.session_state.orders))
+    m2.metric(f"Space Required ({abbr})", f"{total_needed:.0f}")
+    m3.metric(f"Fleet Capacity ({abbr})", f"{fleet_cap:.0f}", help="Total across all available trucks at current fill cap")
+    m4.metric("Fleet Load", f"{fleet_util_pct:.0f}%",
+              delta="Within capacity" if fleet_util_pct <= 100 else f"Over by {fleet_util_pct-100:.0f}%",
+              delta_color="normal" if fleet_util_pct <= 100 else "inverse")
 
     if total_needed > fleet_cap:
         st.error(f"Orders exceed fleet capacity by {total_needed - fleet_cap:.0f} {abbr}. Add trucks or remove orders.")
@@ -684,7 +687,7 @@ def render_load_plan(cfg: dict):
             date_str=datetime.date.today().isoformat(),
         )
         col_banner, col_dl = st.columns([3, 1])
-        col_banner.success("✅ Plan ready — export route sheets for drivers below.")
+        col_banner.success("✅ Optimized plan ready — export route sheets for drivers below.")
         col_dl.download_button(
             "⬇ Export Route Sheets (HTML)",
             data=html_str.encode("utf-8"),
@@ -698,18 +701,51 @@ def render_load_plan(cfg: dict):
         _avg_util = sum(a.utilization_pct for a in _asgn) / len(_asgn) if _asgn else 0
         _total_miles = sum(a.route_distance_miles for a in _asgn if a.route_distance_miles)
         _trucks_saved = manual_truck_count - len(_asgn)
-        _rm1, _rm2, _rm3, _rm4 = st.columns(4)
-        _rm1.metric("Trucks Used", len(_asgn), delta=f"{_trucks_saved} saved vs manual" if _trucks_saved > 0 else None)
-        _rm2.metric("Total Stops", _total_stops)
-        _rm3.metric("Avg Utilization", f"{_avg_util:.0f}%")
-        _rm4.metric("Est. Total Miles", f"{_total_miles:.0f}" if _total_miles else "—")
+        _pct_saved = round(_trucks_saved / manual_truck_count * 100) if manual_truck_count else 0
+        _avg_time = sum(getattr(a, 'route_time_hours', 0.0) for a in _asgn) / len(_asgn) if _asgn else 0
 
-        if _trucks_saved > 0:
-            st.info(
-                f"**{_trucks_saved} truck{'s' if _trucks_saved != 1 else ''} saved on this run.** "
-                f"Optimizer used {len(_asgn)} trucks. "
-                f"Current process used {manual_truck_count}."
+        # Optimizer vs Unoptimized comparison block
+        _c_opt, _c_mid, _c_man = st.columns([5, 3, 5])
+        with _c_opt:
+            st.markdown(
+                f"<div style='background:#e8f5e9;border-radius:10px;padding:16px 20px;border:1px solid #a5d6a7'>"
+                f"<div style='font-size:0.75rem;font-weight:600;color:#2e7d32;letter-spacing:1px;text-transform:uppercase'>Optimizer</div>"
+                f"<div style='font-size:2.6rem;font-weight:800;color:#1b5e20;line-height:1.1'>{len(_asgn)}</div>"
+                f"<div style='font-size:0.95rem;color:#388e3c'>trucks used · {_avg_util:.0f}% avg fill</div>"
+                f"</div>",
+                unsafe_allow_html=True,
             )
+        with _c_mid:
+            if _trucks_saved > 0:
+                st.markdown(
+                    f"<div style='text-align:center;padding:12px 0'>"
+                    f"<div style='font-size:2rem;font-weight:800;color:#1a5fa8'>↓ {_trucks_saved}</div>"
+                    f"<div style='font-size:0.85rem;color:#555;font-weight:600'>{_pct_saved}% fewer trucks</div>"
+                    f"<div style='font-size:0.75rem;color:#888;margin-top:4px'>vs unoptimized</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    "<div style='text-align:center;padding:20px 0;color:#888;font-size:1.2rem'>vs</div>",
+                    unsafe_allow_html=True,
+                )
+        with _c_man:
+            st.markdown(
+                f"<div style='background:#fafafa;border-radius:10px;padding:16px 20px;border:1px solid #e0e0e0'>"
+                f"<div style='font-size:0.75rem;font-weight:600;color:#888;letter-spacing:1px;text-transform:uppercase'>Unoptimized (manual)</div>"
+                f"<div style='font-size:2.6rem;font-weight:800;color:#555;line-height:1.1'>{manual_truck_count}</div>"
+                f"<div style='font-size:0.95rem;color:#999'>trucks used · no optimization</div>"
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("<div style='margin-top:12px'></div>", unsafe_allow_html=True)
+        _s1, _s2, _s3, _s4 = st.columns(4)
+        _s1.metric("Stops Covered", _total_stops)
+        _s2.metric("Avg Truck Fill", f"{_avg_util:.0f}%")
+        _s3.metric("Avg Route Time", f"{_avg_time:.1f} hr" if _avg_time else "—")
+        _s4.metric("Est. Total Miles", f"{_total_miles:.0f}" if _total_miles else "—")
 
         # Bay width limits per truck type (inches). Windows wider than this can't physically load.
         _BAY_WIDTH = {"straight": 96.0, "trailer": 99.0}
