@@ -1,5 +1,6 @@
 import copy
 import os
+import time
 import yaml
 import streamlit as st
 import pandas as pd
@@ -94,6 +95,7 @@ def init_state():
         "dropped": [],
         "uploader_key": 0,
         "auto_run_pending": False,
+        "dismiss_packing_issues": False,
         "first_visit": True,     # drives one-time onboarding modal
         "onboarding_slide": 0,
         "_ob_navigating": False, # True only when a slide nav button was just clicked
@@ -537,6 +539,33 @@ def render_load_plan(cfg: dict):
     if total_needed > fleet_cap:
         st.error(f"Orders exceed fleet capacity by {total_needed - fleet_cap:.0f} {abbr}. Add trucks or remove orders.")
 
+    with st.expander("🔍 Order data summary (troubleshooting)", expanded=False):
+        _orders = st.session_state.orders
+        if _orders:
+            _caps = [o.capacity_units for o in _orders]
+            _restricted = sum(1 for o in _orders if o.allowed_truck_types)
+            st.caption(
+                f"**{len(_caps)} stops** — min {min(_caps):.1f} {abbr}, "
+                f"max {max(_caps):.1f} {abbr}, avg {sum(_caps)/len(_caps):.1f} {abbr}  \n"
+                f"Straight-truck only (homebuilder): **{_restricted}** stops  \n"
+                f"Stop time per stop: **{stop_time_minutes:.0f} min** → max stops per truck from time alone: "
+                f"**{int(max_route_hours * 60 / stop_time_minutes)}**  \n"
+                f"Straight truck fill cap: **{208 * max_fill_pct:.0f} {abbr}** "
+                f"· Trailer fill cap: **{431.06 * max_fill_pct:.0f} {abbr}**"
+            )
+            if max(_caps) > 208:
+                st.warning(
+                    f"Largest stop ({max(_caps):.0f} {abbr}) exceeds a straight truck's full capacity (208 {abbr}). "
+                    "It must go on a trailer. If you have no trailers, it will be dropped."
+                )
+            if sum(_caps) / len(_caps) < 5:
+                st.warning(
+                    f"Average stop size is {sum(_caps)/len(_caps):.1f} {abbr} — unusually small. "
+                    "Check that FeneVision sqftShippedQty values are in square feet, not square inches or another unit."
+                )
+        else:
+            st.caption("No orders loaded yet.")
+
     with st.expander("⚙️ Distance routing (optional — off by default)", expanded=False):
         st.caption(
             "By default the optimizer assigns stops to trucks without real driving distances — "
@@ -556,8 +585,10 @@ def render_load_plan(cfg: dict):
         errors = validate_inputs(orders_copy, trucks)
         if not errors:
             st.session_state.auto_run_pending = False
+            st.session_state.dismiss_packing_issues = False
             anim = st.empty()
             anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
+            time.sleep(1.0)  # let tab-switch JS fire before solver blocks the thread
             assignments, dropped = solve(
                 orders_copy, trucks, depot_coords,
                 max_route_hours=max_route_hours,
@@ -605,6 +636,7 @@ def render_load_plan(cfg: dict):
             for w in warnings:
                 st.warning(f"Multi-day route flag: {w}")
 
+        st.session_state.dismiss_packing_issues = False
         anim = st.empty()
         anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
         assignments, dropped = solve(
@@ -659,30 +691,42 @@ def render_load_plan(cfg: dict):
 
         # Bay width limits per truck type (inches). Windows wider than this can't physically load.
         _BAY_WIDTH = {"straight": 96.0, "trailer": 99.0}
-        packing_issues = []
-        for a in st.session_state.assignments:
-            bay = _BAY_WIDTH.get(a.truck.truck_type, 96.0)
-            for stop in a.stops:
-                w = getattr(stop.order, 'max_window_width_inches', None)
-                if w is not None and w > bay:
-                    packing_issues.append((
-                        a.truck.name, stop.stop_number,
-                        stop.order.customer_name, w, bay,
-                    ))
-        if packing_issues:
-            with st.expander(
-                f"🚨 {len(packing_issues)} stop(s) have windows wider than the truck bay — WILL NOT FIT",
-                expanded=True,
-            ):
-                st.caption(
-                    "These windows exceed the physical bay width of their assigned truck. "
-                    "Re-assign to a wider truck or verify the window width in FeneVision."
-                )
-                for truck_name, stop_num, customer, w, bay in packing_issues:
-                    st.error(
-                        f"**{truck_name} → Stop {stop_num} — {customer}**  \n"
-                        f"Max window width {w:.0f}\" exceeds truck bay {bay:.0f}\""
+        if not st.session_state.get("dismiss_packing_issues"):
+            packing_issues = []
+            for a in st.session_state.assignments:
+                bay = _BAY_WIDTH.get(a.truck.truck_type, 96.0)
+                for stop in a.stops:
+                    w = getattr(stop.order, 'max_window_width_inches', None)
+                    if w is not None and w > bay:
+                        packing_issues.append((
+                            a.truck.name, stop.stop_number,
+                            stop.order.customer_name, stop.order.order_id, w, bay,
+                        ))
+            if packing_issues:
+                with st.expander(
+                    f"⚠️ {len(packing_issues)} stop(s) have windows wider than the assigned truck bay",
+                    expanded=True,
+                ):
+                    st.caption(
+                        "These windows may not physically load into the assigned truck. "
+                        "Printing is NOT blocked — route sheets can still be exported. "
+                        "Verify the window width in FeneVision or re-assign to a wider truck."
                     )
+                    for truck_name, stop_num, customer, order_id, w, bay in packing_issues:
+                        st.warning(
+                            f"**{truck_name} → Stop {stop_num} — {customer}** (`{order_id}`)  \n"
+                            f"Max window width {w:.0f}\" exceeds truck bay {bay:.0f}\""
+                        )
+                    _pc1, _pc2, _pc3 = st.columns([2, 2, 1])
+                    if _pc1.button("Remove flagged stops from plan", type="secondary"):
+                        flagged_ids = {r[3] for r in packing_issues}
+                        for a in st.session_state.assignments:
+                            a.stops = [s for s in a.stops if s.order.order_id not in flagged_ids]
+                        st.session_state.assignments = [a for a in st.session_state.assignments if a.stops]
+                        st.rerun()
+                    if _pc3.button("Dismiss ✕"):
+                        st.session_state.dismiss_packing_issues = True
+                        st.rerun()
 
         addr_issues = _flag_address_issues(st.session_state.assignments)
         if addr_issues:
@@ -981,9 +1025,11 @@ def main():
         st.session_state._jump_plan = False
         st.components.v1.html(
             "<script>setTimeout(function(){try{"
-            "var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');"
+            "var doc=window.parent.document;"
+            "var t=doc.querySelectorAll('button[data-baseweb=\"tab\"]');"
+            "if(!t||t.length<2)t=doc.querySelectorAll('[role=\"tab\"]');"
             "if(t&&t.length>1)t[1].click();"
-            "}catch(e){}},400);</script>",
+            "}catch(e){}},800);</script>",
             height=0,
         )
 
