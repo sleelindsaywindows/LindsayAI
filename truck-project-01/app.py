@@ -230,6 +230,12 @@ def render_sidebar(cfg: dict) -> dict:
         value=int(routing.get("max_fill_pct", 90)),
         help="Optimizer won't fill trucks past this percentage. 90% leaves room for real-world loading variance.",
     )
+    manual_truck_count = st.sidebar.number_input(
+        "Manual route count (for comparison)",
+        value=int(routing.get("manual_truck_count", 13)),
+        min_value=1, step=1,
+        help="How many trucks were used in the current manual process. Used to compute trucks saved.",
+    )
 
     st.sidebar.subheader("Truck Fleet")
     h1, h2 = st.sidebar.columns([3, 2])
@@ -258,6 +264,7 @@ def render_sidebar(cfg: dict) -> dict:
                 "max_route_hours": max_hours,
                 "stop_time_minutes": stop_time,
                 "max_fill_pct": max_fill_pct,
+                "manual_truck_count": manual_truck_count,
                 "avg_speed_mph": routing.get("avg_speed_mph", 45),
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
                 "exclude_route_patterns": routing.get("exclude_route_patterns", []),
@@ -275,6 +282,7 @@ def render_sidebar(cfg: dict) -> dict:
                 "max_route_hours": max_hours,
                 "stop_time_minutes": stop_time,
                 "max_fill_pct": max_fill_pct,
+                "manual_truck_count": manual_truck_count,
                 "avg_speed_mph": routing.get("avg_speed_mph", 45),
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
                 "exclude_route_patterns": routing.get("exclude_route_patterns", []),
@@ -491,6 +499,7 @@ def render_load_plan(cfg: dict):
     stop_time_minutes = float(routing_cfg.get("stop_time_minutes", 45.0))
     avg_speed_mph = float(routing_cfg.get("avg_speed_mph", 45.0))
     max_fill_pct = float(routing_cfg.get("max_fill_pct", 90)) / 100.0
+    manual_truck_count = int(routing_cfg.get("manual_truck_count", 13))
     solver_time_limit = int(routing_cfg.get("solver_time_limit_seconds", 15))
 
     trucks = [
@@ -626,11 +635,19 @@ def render_load_plan(cfg: dict):
         _total_stops = sum(len(a.stops) for a in _asgn)
         _avg_util = sum(a.utilization_pct for a in _asgn) / len(_asgn) if _asgn else 0
         _total_miles = sum(a.route_distance_miles for a in _asgn if a.route_distance_miles)
+        _trucks_saved = manual_truck_count - len(_asgn)
         _rm1, _rm2, _rm3, _rm4 = st.columns(4)
-        _rm1.metric("Trucks Used", len(_asgn))
+        _rm1.metric("Trucks Used", len(_asgn), delta=f"{_trucks_saved} saved vs manual" if _trucks_saved > 0 else None)
         _rm2.metric("Total Stops", _total_stops)
         _rm3.metric("Avg Utilization", f"{_avg_util:.0f}%")
         _rm4.metric("Est. Total Miles", f"{_total_miles:.0f}" if _total_miles else "—")
+
+        if _trucks_saved > 0:
+            st.info(
+                f"**{_trucks_saved} truck{'s' if _trucks_saved != 1 else ''} saved on this run.** "
+                f"Optimizer used {len(_asgn)} trucks. "
+                f"Current process used {manual_truck_count}."
+            )
 
         # Bay width limits per truck type (inches). Windows wider than this can't physically load.
         _BAY_WIDTH = {"straight": 96.0, "trailer": 99.0}

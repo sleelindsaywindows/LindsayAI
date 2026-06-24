@@ -100,6 +100,7 @@ routing:
   max_route_hours: 9.0          # Joseph's 9-hour driver limit (11-hr legal max, 9-hr practical cap)
   stop_time_minutes: 45         # estimated unload time per stop; 30–60 min per neighborhood (confirm with Joseph)
   max_fill_pct: 90              # optimizer caps truck load at this % of capacity; 90% leaves buffer for real-world variance
+  manual_truck_count: 13        # trucks used in current manual process (6/17 baseline); update per run for accurate savings display
   avg_speed_mph: 45             # haversine → drive time conversion; mixed GA urban/rural estimate
   solver_time_limit_seconds: 30
   exclude_route_patterns: []    # substrings matched case-insensitively against RouteName; empty = no exclusions
