@@ -241,6 +241,23 @@ def render_sidebar(cfg: dict) -> dict:
         help="How many trucks were used in the current manual process. Used to compute trucks saved.",
     )
 
+    st.sidebar.subheader("Import Filters")
+    _default_patterns = "\n".join(routing.get("exclude_route_patterns", ["Lindsay MO"]))
+    exclude_patterns_raw = st.sidebar.text_area(
+        "Exclude routes (one pattern per line)",
+        value=_default_patterns,
+        height=80,
+        help="Routes whose name contains any of these strings (case-insensitive) are excluded on FeneVision import. "
+             "Use this to drop interplant transfers (e.g. 'Lindsay MO').",
+    )
+    min_sqft_sidebar = st.sidebar.number_input(
+        "Min stop size to import (sq ft)",
+        value=float(routing.get("min_sqft_threshold", 5.0)),
+        min_value=0.0, max_value=50.0, step=1.0,
+        help="Stops with sqftShippedQty below this are skipped on import. "
+             "Raises the floor above screen-only or placeholder stops (which often show as 1–2 sq ft).",
+    )
+
     st.sidebar.subheader("Truck Fleet")
     h1, h2 = st.sidebar.columns([3, 2])
     h1.caption("Truck Name")
@@ -272,7 +289,8 @@ def render_sidebar(cfg: dict) -> dict:
                 "straight_speed_mph": routing.get("straight_speed_mph", 47),
                 "trailer_speed_mph": routing.get("trailer_speed_mph", 40),
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
-                "exclude_route_patterns": routing.get("exclude_route_patterns", []),
+                "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
+                "min_sqft_threshold": min_sqft_sidebar,
             },
         }
         save_config(new_cfg)
@@ -291,7 +309,8 @@ def render_sidebar(cfg: dict) -> dict:
                 "straight_speed_mph": routing.get("straight_speed_mph", 47),
                 "trailer_speed_mph": routing.get("trailer_speed_mph", 40),
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
-                "exclude_route_patterns": routing.get("exclude_route_patterns", []),
+                "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
+                "min_sqft_threshold": min_sqft_sidebar,
             },
         }
         save_config(new_cfg)
@@ -320,12 +339,15 @@ def render_add_orders(cfg: dict):
         label_visibility="collapsed",
     )
     if fv_file is not None:
-        exclude_patterns = cfg.get("routing", {}).get("exclude_route_patterns", [])
+        _routing_cfg = cfg.get("routing", {})
+        exclude_patterns = _routing_cfg.get("exclude_route_patterns", ["Lindsay MO"])
+        min_sqft_import = float(_routing_cfg.get("min_sqft_threshold", 5.0))
         try:
             with st.spinner("Reading FeneVision file…"):
                 new_orders, skipped, excluded = import_fenevision_xlsx(
                     fv_file,
                     exclude_route_patterns=exclude_patterns,
+                    min_sqft=min_sqft_import,
                 )
         except Exception as e:
             st.error(f"Could not read FeneVision file: {e}")

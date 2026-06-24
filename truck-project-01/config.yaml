@@ -104,4 +104,6 @@ routing:
   straight_speed_mph: 47        # 26ft straight trucks — nimbler through subdivisions and tight streets
   trailer_speed_mph: 40         # 53ft trailers — slower on all road types (Joseph confirmed)
   solver_time_limit_seconds: 30
-  exclude_route_patterns: []    # substrings matched case-insensitively against RouteName; empty = no exclusions
+  exclude_route_patterns:
+    - "Lindsay MO"              # interplant MO transfer — not a customer delivery
+  min_sqft_threshold: 5.0      # stops below this sq ft are skipped (screen-only / placeholder stops)
