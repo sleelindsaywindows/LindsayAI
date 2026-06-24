@@ -96,6 +96,7 @@ def init_state():
         "uploader_key": 0,
         "auto_run_pending": False,
         "dismiss_packing_issues": False,
+        "fv_filename": None,
         "first_visit": True,     # drives one-time onboarding modal
         "onboarding_slide": 0,
         "_ob_navigating": False, # True only when a slide nav button was just clicked
@@ -259,21 +260,24 @@ def render_sidebar(cfg: dict) -> dict:
     )
 
     st.sidebar.subheader("Truck Fleet")
-    h1, h2 = st.sidebar.columns([3, 2])
+    h1, h2, h3 = st.sidebar.columns([3, 2, 1])
     h1.caption("Truck Name")
     h2.caption(f"Max ({abbr})")
+    h3.caption("Use")
 
     updated_trucks = []
     for i, truck in enumerate(cfg["trucks"]):
-        c1, c2 = st.sidebar.columns([3, 2])
+        c1, c2, c3 = st.sidebar.columns([3, 2, 1])
         name = c1.text_input("Name", value=truck["name"], key=f"t_name_{i}", label_visibility="collapsed")
         cap = c2.number_input(f"Max", value=float(truck["max_capacity"]), key=f"t_cap_{i}", min_value=0.1, label_visibility="collapsed")
+        active = c3.checkbox("", value=bool(truck.get("active", True)), key=f"t_active_{i}", label_visibility="collapsed")
         updated_trucks.append({
             "name": name,
             "type": truck["type"],
             "max_capacity": cap,
             "fixed_cost": truck.get("fixed_cost", 5.0),
             "cost_per_mile": truck.get("cost_per_mile", 0.0),
+            "active": active,
         })
 
     if st.sidebar.button("＋ Add Truck"):
@@ -357,6 +361,7 @@ def render_add_orders(cfg: dict):
             st.session_state.dropped = []
             st.session_state.uploader_key += 1
             st.session_state.auto_run_pending = True
+            st.session_state.fv_filename = fv_file.name
             st.session_state._jump_plan = True
             msg = f"✅ {len(new_orders)} stops loaded"
             if excluded:
@@ -540,11 +545,16 @@ def render_load_plan(cfg: dict):
             cost_per_mile=t.get("cost_per_mile", 0.0),
         )
         for t in cfg["trucks"]
+        if t.get("active", True)  # skip trucks unchecked in sidebar
     ]
 
     if not st.session_state.orders:
         st.info("Add orders in the 'Add Orders' tab first.")
         return
+
+    _fname = st.session_state.get("fv_filename")
+    if _fname:
+        st.caption(f"📄 Loaded from: **{_fname}**")
 
     depot_addr = cfg["depot"].get("address", "")
     depot_coords = (33.749, -84.388)
