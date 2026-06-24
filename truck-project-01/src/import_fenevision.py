@@ -74,7 +74,7 @@ def import_fenevision_xlsx(
     # Common FeneVision column name variants — first match per logical field wins.
     # Qty: FeneVision often exports as shpQty, ShipQty, or Quantity.
     _DETAIL_COLS = ["OrderNumber", "LineItem", "SubLineItem", "Width", "Height", "PartNo",
-                    "Qty", "shpQty", "ShipQty", "Quantity", "QtyShipped"]
+                    "sqftShippedQty", "Qty", "shpQty", "ShipQty", "Quantity", "QtyShipped"]
     _detail_available = [c for c in _DETAIL_COLS if c in df.columns]
     _line_items_by_stop: dict = {}
     for (route_id, stop_num), grp in df.groupby(["RouteID", "Stop"]):

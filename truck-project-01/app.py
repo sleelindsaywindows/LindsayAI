@@ -260,30 +260,61 @@ def render_sidebar(cfg: dict) -> dict:
     )
 
     st.sidebar.subheader("Truck Fleet")
-    h1, h2, h3 = st.sidebar.columns([3, 2, 1])
-    h1.caption("Truck Name")
-    h2.caption(f"Max ({abbr})")
-    h3.caption("Use")
+    _h0, _h1, _h2, _h3, _h4 = st.sidebar.columns([2, 1.8, 1.4, 0.7, 0.5])
+    _h0.caption("Driver")
+    _h1.caption("Size")
+    _h2.caption(f"Max ({abbr})")
+    _h3.caption("Use")
 
     updated_trucks = []
+    _delete_triggered = False
     for i, truck in enumerate(cfg["trucks"]):
-        c1, c2, c3 = st.sidebar.columns([3, 2, 1])
-        name = c1.text_input("Name", value=truck["name"], key=f"t_name_{i}", label_visibility="collapsed")
-        cap = c2.number_input(f"Max", value=float(truck["max_capacity"]), key=f"t_cap_{i}", min_value=0.1, label_visibility="collapsed")
-        active = c3.checkbox("", value=bool(truck.get("active", True)), key=f"t_active_{i}", label_visibility="collapsed")
-        updated_trucks.append({
-            "name": name,
-            "type": truck["type"],
-            "max_capacity": cap,
-            "fixed_cost": truck.get("fixed_cost", 5.0),
-            "cost_per_mile": truck.get("cost_per_mile", 0.0),
-            "active": active,
-        })
+        _c0, _c1, _c2, _c3, _c4 = st.sidebar.columns([2, 1.8, 1.4, 0.7, 0.5])
+        driver = _c0.text_input("Driver", value=truck.get("driver", ""), key=f"t_driver_{i}",
+                                label_visibility="collapsed", placeholder="Driver")
+        name = _c1.text_input("Size", value=truck["name"], key=f"t_name_{i}", label_visibility="collapsed")
+        cap = _c2.number_input("Max", value=float(truck["max_capacity"]), key=f"t_cap_{i}",
+                               min_value=0.1, label_visibility="collapsed")
+        active = _c3.checkbox("", value=bool(truck.get("active", True)), key=f"t_active_{i}",
+                              label_visibility="collapsed")
+        delete = _c4.button("✕", key=f"t_del_{i}", help="Remove this truck")
+        if delete:
+            _delete_triggered = True
+        else:
+            updated_trucks.append({
+                "name": name,
+                "driver": driver,
+                "type": truck["type"],
+                "max_capacity": cap,
+                "fixed_cost": truck.get("fixed_cost", 5.0),
+                "cost_per_mile": truck.get("cost_per_mile", 0.0),
+                "active": active,
+            })
+
+    if _delete_triggered:
+        _save_cfg = {
+            "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
+            "trucks": updated_trucks,
+            "depot": {"name": depot_name, "address": depot_addr},
+            "routing": {
+                "max_route_hours": max_hours,
+                "stop_time_minutes": stop_time,
+                "max_fill_pct": max_fill_pct,
+                "manual_truck_count": manual_truck_count,
+                "straight_speed_mph": routing.get("straight_speed_mph", 47),
+                "trailer_speed_mph": routing.get("trailer_speed_mph", 40),
+                "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
+                "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
+                "min_sqft_threshold": min_sqft_sidebar,
+            },
+        }
+        save_config(_save_cfg)
+        st.rerun()
 
     if st.sidebar.button("＋ Add Truck"):
         new_cfg = {
             "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
-            "trucks": updated_trucks + [{"name": "New Truck", "type": "straight", "max_capacity": 176.0, "fixed_cost": 5.0, "cost_per_mile": 0.0}],
+            "trucks": updated_trucks + [{"name": "26ft Straight", "driver": "", "type": "straight", "max_capacity": 208.0, "fixed_cost": 5.0, "cost_per_mile": 1.75, "active": True}],
             "depot": {"name": depot_name, "address": depot_addr},
             "routing": {
                 "max_route_hours": max_hours,
@@ -543,6 +574,7 @@ def render_load_plan(cfg: dict):
             max_capacity=t["max_capacity"] * max_fill_pct,
             fixed_cost=t.get("fixed_cost", 5.0),
             cost_per_mile=t.get("cost_per_mile", 0.0),
+            driver=t.get("driver", ""),
         )
         for t in cfg["trucks"]
         if t.get("active", True)  # skip trucks unchecked in sidebar
@@ -828,8 +860,10 @@ def render_load_plan(cfg: dict):
         dist_str = f" · {assignment.route_distance_miles:.0f} mi" if assignment.route_distance_miles else ""
         _rth = getattr(assignment, 'route_time_hours', 0.0)
         time_str = f" · ~{_rth:.1f} hr" if _rth else ""
+        _driver = getattr(assignment.truck, "driver", "") or ""
+        _driver_str = f" · {_driver}" if _driver else ""
         label = (
-            f"🚛 {assignment.truck.name} — "
+            f"🚛 {assignment.truck.name}{_driver_str} — "
             f"{assignment.total_capacity_used:.0f}/{assignment.truck.max_capacity:.0f} {abbr} "
             f"({assignment.utilization_pct:.0f}% utilized){dist_str}{time_str}"
         )
@@ -853,11 +887,14 @@ def render_load_plan(cfg: dict):
                         st.caption(f"  Note: {stop.order.notes}")
                     _line_items = getattr(stop.order, "line_items", None)
                     if _line_items:
-                        _show_cols = [c for c in ["OrderNumber", "Width", "Height", "PartNo", "Qty"]
-                                      if any(c in item for item in _line_items)]
+                        _prefer_cols = ["OrderNumber", "Width", "Height", "PartNo",
+                                        "sqftShippedQty", "Qty", "shpQty", "ShipQty", "Quantity"]
+                        _show_cols = [c for c in _prefer_cols if any(c in item for item in _line_items)]
                         if _show_cols:
+                            # Rename sqftShippedQty to "Sq Ft" for readability
+                            _col_labels = {c: ("Sq Ft" if c == "sqftShippedQty" else c) for c in _show_cols}
                             with st.expander(f"📋 {len(_line_items)} line items", expanded=False):
-                                _item_rows = [{c: item.get(c, "") for c in _show_cols} for item in _line_items]
+                                _item_rows = [{_col_labels[c]: item.get(c, "") for c in _show_cols} for item in _line_items]
                                 st.dataframe(
                                     pd.DataFrame(_item_rows),
                                     use_container_width=True,
@@ -940,8 +977,10 @@ def render_analysis(cfg: dict):
     for a in assignments:
         miles = a.route_distance_miles if a.route_distance_miles else 0.0
         cost = miles * a.truck.cost_per_mile if miles else None
+        _drv = getattr(a.truck, "driver", "") or ""
         summary_rows.append({
             "Truck": a.truck.name,
+            "Driver": _drv if _drv else "—",
             "Type": a.truck.truck_type,
             "Stops": len(a.stops),
             f"Sq Ft Used": round(a.total_capacity_used, 1),

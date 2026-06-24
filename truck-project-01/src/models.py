@@ -35,6 +35,7 @@ class Truck:
     max_capacity: float     # floor sq ft (practical, not theoretical)
     fixed_cost: float = 5.0     # activation penalty in equivalent miles — fills small trucks first
     cost_per_mile: float = 0.0  # $/mile placeholder for future cost objective
+    driver: str = ""            # driver name for display (Joseph assigns names per route)
 
 
 @dataclass

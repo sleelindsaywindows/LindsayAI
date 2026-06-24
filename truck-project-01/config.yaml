@@ -2,108 +2,116 @@ measurement:
   unit: square_feet
   label: square feet
   abbreviation: sq ft
-
-# Practical floor capacities from Geoff's FeneVision Trucks sheet (confirmed 2026-06-17).
-# 53-ft trailer:  8.25 ft × 52.25 ft = 431.06 sq ft  (FeneVision TruckType 11)
-# 26-ft straight: 8.00 ft × 26.00 ft = 208.00 sq ft  (FeneVision TruckType 14)
-# Screens are placed on top of windows → zero floor allocation.
 trucks:
-  - name: 26ft Straight #1
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0      # activation penalty in equivalent miles (keep small trucks preferred)
-    cost_per_mile: 1.75  # $/mile from FeneVision Trucks sheet
-
-  - name: 26ft Straight #2
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0
-    cost_per_mile: 1.75
-
-  - name: 26ft Straight #3
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0
-    cost_per_mile: 1.75
-
-  - name: 26ft Straight #4
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0
-    cost_per_mile: 1.75
-
-  - name: 26ft Straight #5
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0
-    cost_per_mile: 1.75
-
-  - name: 26ft Straight #6
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0
-    cost_per_mile: 1.75
-
-  - name: 26ft Straight #7
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0
-    cost_per_mile: 1.75
-
-  - name: 26ft Straight #8
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0
-    cost_per_mile: 1.75
-
-  - name: 26ft Straight #9
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0
-    cost_per_mile: 1.75
-
-  - name: 26ft Straight #10
-    type: straight
-    max_capacity: 208.0
-    fixed_cost: 5.0
-    cost_per_mile: 1.75
-
-  - name: 53ft Trailer #1
-    type: trailer
-    max_capacity: 431.06
-    fixed_cost: 20.0     # higher penalty — solver fills straight trucks before activating trailer
-    cost_per_mile: 1.50  # $/mile from FeneVision Trucks sheet
-
-  - name: 53ft Trailer #2
-    type: trailer
-    max_capacity: 431.06
-    fixed_cost: 20.0
-    cost_per_mile: 1.50
-
-  - name: 53ft Trailer #3
-    type: trailer
-    max_capacity: 431.06
-    fixed_cost: 20.0
-    cost_per_mile: 1.50
-
-  - name: 53ft Trailer #4
-    type: trailer
-    max_capacity: 431.06
-    fixed_cost: 20.0
-    cost_per_mile: 1.50
-
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 53ft Trailer
+  driver: ''
+  type: trailer
+  max_capacity: 431.06
+  fixed_cost: 20.0
+  cost_per_mile: 1.5
+  active: true
+- name: 53ft Trailer
+  driver: ''
+  type: trailer
+  max_capacity: 431.06
+  fixed_cost: 20.0
+  cost_per_mile: 1.5
+  active: true
+- name: 53ft Trailer
+  driver: ''
+  type: trailer
+  max_capacity: 431.06
+  fixed_cost: 20.0
+  cost_per_mile: 1.5
+  active: true
+- name: 53ft Trailer
+  driver: ''
+  type: trailer
+  max_capacity: 431.06
+  fixed_cost: 20.0
+  cost_per_mile: 1.5
+  active: true
 depot:
-  name: Lindsay Windows — Georgia Plant
-  address: ""   # fill in with actual plant address for geocoded distance routing
-
+  name: "Lindsay Windows — Georgia Plant"
+  address: ''
 routing:
-  max_route_hours: 9.0          # Joseph's 9-hour driver limit (11-hr legal max, 9-hr practical cap)
-  stop_time_minutes: 45         # estimated unload time per stop; 30–60 min per neighborhood (confirm with Joseph)
-  max_fill_pct: 90              # optimizer caps truck load at this % of capacity; 90% leaves buffer for real-world variance
-  manual_truck_count: 13        # trucks used in current manual process (6/17 baseline); update per run for accurate savings display
-  straight_speed_mph: 47        # 26ft straight trucks — nimbler through subdivisions and tight streets
-  trailer_speed_mph: 40         # 53ft trailers — slower on all road types (Joseph confirmed)
+  max_route_hours: 9.0
+  stop_time_minutes: 45.0
+  max_fill_pct: 100
+  manual_truck_count: 13
+  straight_speed_mph: 47
+  trailer_speed_mph: 40
   solver_time_limit_seconds: 30
   exclude_route_patterns:
-    - "Lindsay MO"              # interplant MO transfer — not a customer delivery
-  min_sqft_threshold: 5.0      # stops below this sq ft are skipped (screen-only / placeholder stops)
+  - Lindsay MO
+  min_sqft_threshold: 5.0
