@@ -871,17 +871,64 @@ def render_load_plan(cfg: dict):
 
     if st.session_state.dropped:
         dropped_ids = ", ".join(o.order_id for o in st.session_state.dropped)
-        st.error(
-            f"⚠ {len(st.session_state.dropped)} order(s) could not be assigned "
-            f"(fleet capacity exceeded or route cap hit): {dropped_ids}"
-        )
+        # Check whether these drops are likely multi-day (geocoding was on and warnings fired)
+        _multiday_ids = set()
+        for _o in st.session_state.dropped:
+            if _o.lat is not None:  # geocoded → HOS cap caused drop, not capacity
+                _multiday_ids.add(_o.order_id)
+        _likely_multiday = len(_multiday_ids) > 0 and len(_multiday_ids) == len(st.session_state.dropped)
+
+        if _likely_multiday:
+            with st.expander(
+                f"🗓 {len(st.session_state.dropped)} stop(s) dropped — likely multi-day routes "
+                f"(NC / SC / AL runs that exceed the {max_route_hours:.0f}-hr daily cap)",
+                expanded=True,
+            ):
+                st.markdown(
+                    f"**Stops:** {dropped_ids}  \n"
+                    "These are long-haul routes. Real drive time exceeds the single-day limit. "
+                    "Choose how to handle them:"
+                )
+                _opt1, _opt2, _opt3 = st.columns(3)
+                if _opt1.button(
+                    "🚐 Include as multi-day runs",
+                    help="Raises max route hours to 24 and re-solves. Flag these trucks for overnight.",
+                    use_container_width=True,
+                ):
+                    import yaml as _yaml
+                    _cfg_now = load_config()
+                    _cfg_now["routing"]["max_route_hours"] = 24.0
+                    save_config(_cfg_now)
+                    st.session_state.auto_run_pending = True
+                    st.rerun()
+                if _opt2.button(
+                    "🚫 Exclude & plan separately",
+                    help="Removes these stops from session. Plan them as a dedicated run.",
+                    use_container_width=True,
+                ):
+                    _drop_ids = {o.order_id for o in st.session_state.dropped}
+                    st.session_state.orders = [
+                        o for o in st.session_state.orders if o.order_id not in _drop_ids
+                    ]
+                    st.session_state.dropped = []
+                    st.session_state.auto_run_pending = True
+                    st.rerun()
+                _opt3.caption(
+                    "Or: adjust **Max Route Hours** in the sidebar routing config manually."
+                )
+        else:
+            st.error(
+                f"⚠ {len(st.session_state.dropped)} order(s) could not be assigned "
+                f"(fleet capacity exceeded or route cap hit): {dropped_ids}"
+            )
 
     if not st.session_state.assignments:
         st.error("Optimizer found no solution. Check that fleet capacity covers total order space.")
         return
 
     st.divider()
-    for assignment in st.session_state.assignments:
+    _all_asgn = st.session_state.assignments  # alias for reorder callbacks
+    for v_idx, assignment in enumerate(_all_asgn):
         dist_str = f" · {assignment.route_distance_miles:.0f} mi" if assignment.route_distance_miles else ""
         _rth = getattr(assignment, 'route_time_hours', 0.0)
         time_str = f" · ~{_rth:.1f} hr" if _rth else ""
@@ -895,36 +942,80 @@ def render_load_plan(cfg: dict):
         with st.expander(label, expanded=True):
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown("**Delivery Sequence**")
-                for stop in assignment.stops:
+                st.markdown("**Delivery Sequence** *(use ↑ ↓ to reorder, ⇄ to move truck)*")
+                for s_idx, stop in enumerate(assignment.stops):
                     _fv_ids = getattr(stop.order, "fenevision_ids", None)
                     _id_label = f" · Order #{_fv_ids}" if _fv_ids else ""
-                    st.markdown(
-                        f"**{stop.stop_number}.** {stop.order.customer_name}  \n"
-                        f"<span style='color:gray;font-size:0.85em'>"
-                        f"{stop.order.address} · {stop.order.capacity_units:.0f} {abbr}"
-                        f"{_id_label}"
-                        f"{'  · P' + str(stop.order.priority) if stop.order.priority > 0 else ''}"
-                        f"</span>",
-                        unsafe_allow_html=True,
-                    )
-                    if stop.order.notes:
-                        st.caption(f"  Note: {stop.order.notes}")
-                    _line_items = getattr(stop.order, "line_items", None)
-                    if _line_items:
-                        _prefer_cols = ["OrderNumber", "Width", "Height", "PartNo",
-                                        "sqftShippedQty", "Qty", "shpQty", "ShipQty", "Quantity"]
-                        _show_cols = [c for c in _prefer_cols if any(c in item for item in _line_items)]
-                        if _show_cols:
-                            # Rename sqftShippedQty to "Sq Ft" for readability
-                            _col_labels = {c: ("Sq Ft" if c == "sqftShippedQty" else c) for c in _show_cols}
-                            with st.expander(f"📋 {len(_line_items)} line items", expanded=False):
-                                _item_rows = [{_col_labels[c]: item.get(c, "") for c in _show_cols} for item in _line_items]
-                                st.dataframe(
-                                    pd.DataFrame(_item_rows),
-                                    use_container_width=True,
-                                    hide_index=True,
-                                )
+                    _btn_col, _info_col = st.columns([1, 7])
+                    with _btn_col:
+                        _n_stops = len(assignment.stops)
+                        if st.button("↑", key=f"mv_up_{v_idx}_{s_idx}",
+                                     disabled=(s_idx == 0), use_container_width=True):
+                            _s = _all_asgn[v_idx].stops
+                            _s[s_idx], _s[s_idx - 1] = _s[s_idx - 1], _s[s_idx]
+                            for _n, _stp in enumerate(_s, 1):
+                                _stp.stop_number = _n
+                            st.rerun()
+                        if st.button("↓", key=f"mv_dn_{v_idx}_{s_idx}",
+                                     disabled=(s_idx == _n_stops - 1), use_container_width=True):
+                            _s = _all_asgn[v_idx].stops
+                            _s[s_idx], _s[s_idx + 1] = _s[s_idx + 1], _s[s_idx]
+                            for _n, _stp in enumerate(_s, 1):
+                                _stp.stop_number = _n
+                            st.rerun()
+                        # Move to different truck
+                        if len(_all_asgn) > 1:
+                            _other_opts = {
+                                f"{a.truck.name}{' · ' + a.truck.driver if a.truck.driver else ''} (stop {len(a.stops)+1})": i
+                                for i, a in enumerate(_all_asgn) if i != v_idx
+                            }
+                            _dest_label = st.selectbox(
+                                "→",
+                                options=list(_other_opts.keys()),
+                                key=f"mv_dest_{v_idx}_{s_idx}",
+                                label_visibility="collapsed",
+                            )
+                            if st.button("⇄", key=f"mv_truck_{v_idx}_{s_idx}",
+                                         use_container_width=True, help="Move stop to selected truck"):
+                                _dest_idx = _other_opts[_dest_label]
+                                _moving = _all_asgn[v_idx].stops.pop(s_idx)
+                                _all_asgn[_dest_idx].stops.append(_moving)
+                                # renumber both trucks
+                                for _n, _stp in enumerate(_all_asgn[v_idx].stops, 1):
+                                    _stp.stop_number = _n
+                                for _n, _stp in enumerate(_all_asgn[_dest_idx].stops, 1):
+                                    _stp.stop_number = _n
+                                # drop truck if now empty
+                                st.session_state.assignments = [
+                                    a for a in _all_asgn if a.stops
+                                ]
+                                st.rerun()
+                    with _info_col:
+                        st.markdown(
+                            f"**{stop.stop_number}.** {stop.order.customer_name}  \n"
+                            f"<span style='color:gray;font-size:0.85em'>"
+                            f"{stop.order.address} · {stop.order.capacity_units:.0f} {abbr}"
+                            f"{_id_label}"
+                            f"{'  · P' + str(stop.order.priority) if stop.order.priority > 0 else ''}"
+                            f"</span>",
+                            unsafe_allow_html=True,
+                        )
+                        if stop.order.notes:
+                            st.caption(f"  Note: {stop.order.notes}")
+                        _line_items = getattr(stop.order, "line_items", None)
+                        if _line_items:
+                            _prefer_cols = ["OrderNumber", "Width", "Height", "PartNo",
+                                            "sqftShippedQty", "Qty", "shpQty", "ShipQty", "Quantity"]
+                            _show_cols = [c for c in _prefer_cols if any(c in item for item in _line_items)]
+                            if _show_cols:
+                                _col_labels = {c: ("Sq Ft" if c == "sqftShippedQty" else c) for c in _show_cols}
+                                with st.expander(f"📋 {len(_line_items)} line items", expanded=False):
+                                    _item_rows = [{_col_labels[c]: item.get(c, "") for c in _show_cols} for item in _line_items]
+                                    st.dataframe(
+                                        pd.DataFrame(_item_rows),
+                                        use_container_width=True,
+                                        hide_index=True,
+                                    )
             with c2:
                 st.markdown("**Load Sequence** *(load #1 first — loads deepest into truck)*")
                 for i, stop in enumerate(assignment.load_sequence, 1):
