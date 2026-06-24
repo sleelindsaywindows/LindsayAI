@@ -1097,15 +1097,16 @@ def render_analysis(cfg: dict):
     util_values = [a.utilization_pct for a in assignments]
     avg_util = round(sum(util_values) / len(util_values), 1) if util_values else 0.0
 
+    _manual_count = int(routing_cfg.get("manual_truck_count", 13))
     comp_rows = [
-        {"Metric": "Trucks Used", "Optimizer": len(assignments), "Current Process": 13},
-        {"Metric": "Total Est. Miles", "Optimizer": round(total_miles, 1) if has_miles else "N/A", "Current Process": "unknown"},
-        {"Metric": "Total Est. Cost ($)", "Optimizer": round(total_cost, 2) if has_miles else "N/A", "Current Process": "unknown"},
-        {"Metric": "Avg Utilization %", "Optimizer": avg_util, "Current Process": "unknown"},
-        {"Metric": "Dropped Orders", "Optimizer": len(dropped), "Current Process": "unknown"},
+        {"Metric": "Trucks Used", "Optimizer": str(len(assignments)), "Unoptimized": str(_manual_count)},
+        {"Metric": "Total Est. Miles", "Optimizer": str(round(total_miles, 1)) if has_miles else "—", "Unoptimized": "—"},
+        {"Metric": "Total Est. Cost ($)", "Optimizer": str(round(total_cost, 2)) if has_miles else "—", "Unoptimized": "—"},
+        {"Metric": "Avg Utilization %", "Optimizer": str(avg_util), "Unoptimized": "—"},
+        {"Metric": "Dropped Orders", "Optimizer": str(len(dropped)), "Unoptimized": "—"},
     ]
-    st.dataframe(pd.DataFrame(comp_rows), use_container_width=True)
-    st.caption("Current process cost computable once the 6/17 manual route sheet is entered.")
+    st.dataframe(pd.DataFrame(comp_rows), use_container_width=True, hide_index=True)
+    st.caption("Unoptimized mileage/cost not tracked — enter manually if needed for comparison.")
 
     st.divider()
 
