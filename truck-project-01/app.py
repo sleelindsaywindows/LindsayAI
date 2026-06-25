@@ -363,10 +363,10 @@ def render_sidebar(cfg: dict) -> dict:
         name = _c1.text_input("Size", value=truck["name"], key=f"t_name_{i}", label_visibility="collapsed")
         cap = _c2.number_input("Max", value=float(truck["max_capacity"]), key=f"t_cap_{i}",
                                min_value=0.1, label_visibility="collapsed")
-        is_contract = _c3.checkbox("", value=truck.get("employment_type", "fulltime") == "contract",
+        is_contract = _c3.checkbox("Contract", value=truck.get("employment_type", "fulltime") == "contract",
                                    key=f"t_ct_{i}", label_visibility="collapsed",
                                    help="Check if driver is a contractor (CT)")
-        active = _c4.checkbox("", value=bool(truck.get("active", True)), key=f"t_active_{i}",
+        active = _c4.checkbox("Active", value=bool(truck.get("active", True)), key=f"t_active_{i}",
                               label_visibility="collapsed")
         delete = _c5.button("✕", key=f"t_del_{i}", help="Remove this truck")
         if delete:
@@ -1381,7 +1381,7 @@ def main():
 
     if st.session_state.get("_jump_orders"):
         st.session_state._jump_orders = False
-        st.components.v1.html(
+        st.iframe(
             "<script>setTimeout(function(){try{"
             "var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');"
             "if(t&&t.length>0)t[0].click();"
@@ -1390,7 +1390,7 @@ def main():
         )
     if st.session_state.get("_jump_plan"):
         st.session_state._jump_plan = False
-        st.components.v1.html(
+        st.iframe(
             "<script>setTimeout(function(){try{"
             "var doc=window.parent.document;"
             "var t=doc.querySelectorAll('button[data-baseweb=\"tab\"]');"
@@ -1400,7 +1400,7 @@ def main():
             height=0,
         )
 
-    st.components.v1.html("""
+    st.iframe("""
 <script>
 (function(){
   var doc = window.parent.document;
