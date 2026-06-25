@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python -c \"from ortools.constraint_solver import pywrapcp; print\\('ortools OK'\\)\")"
+    ]
+  }
+}

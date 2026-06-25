@@ -215,14 +215,42 @@ header[data-testid="stHeader"] {
 }
 header[data-testid="stHeader"] * { color: #fff !important; }
 
-/* Sidebar → light blue-gray, matches Inventory Count webapp functional style */
-section[data-testid="stSidebar"] {
-    background: #e8f3fb !important;
-    border-right: 1px solid #c5ddf0 !important;
+/* Kill Streamlit's opacity-fade on main content headings only */
+.main [data-testid="stMarkdownContainer"] h1,
+.main [data-testid="stMarkdownContainer"] h2,
+.main [data-testid="stMarkdownContainer"] h3,
+[data-testid="stTitle"] {
+    color: #1a1a2e !important;
+    opacity: 1 !important;
+}
+/* Metric labels */
+[data-testid="stMetricLabel"] {
+    color: #555 !important;
+    opacity: 1 !important;
 }
 
-/* Tabs — active tab gets orange underline */
-button[data-baseweb="tab"][aria-selected="true"] {
+/* Sidebar → FeneVision BI orange */
+section[data-testid="stSidebar"] {
+    background: #F58220 !important;
+    border-right: 1px solid #d9701a !important;
+}
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] .stMarkdown,
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3 {
+    color: #1a1a2e !important;
+}
+
+/* Tab bar — scoped to the main tab strip, not sidebar buttons */
+[data-testid="stTabs"] button[data-baseweb="tab"] {
+    color: #1a1a2e !important;
+    font-weight: 500 !important;
+}
+/* Active tab gets orange underline */
+[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
     border-bottom: 3px solid #F58220 !important;
     color: #F58220 !important;
     font-weight: 700 !important;
@@ -249,10 +277,10 @@ div[data-testid="metric-container"] {
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 
-/* Info/success boxes — Lindsay blue tint */
+/* Info boxes — Lindsay blue tint */
 div[data-testid="stInfo"] {
     border-left: 4px solid #1a7cb8 !important;
-    background: #e8f3fb !important;
+    background: #deeef9 !important;
 }
 </style>
 """

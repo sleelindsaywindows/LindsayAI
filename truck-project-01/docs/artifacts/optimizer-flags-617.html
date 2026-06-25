@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Optimizer Flags — 6/17 Route Data</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f0f4f8; color: #1a1a2e; padding: 32px; }
+    .card { background: white; border-radius: 10px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 20px; }
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: #888; margin-bottom: 24px; }
+    h2 { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #555; margin-bottom: 14px; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+    .stat { background: #f8fafc; border: 1.5px solid #e0e8f0; border-radius: 8px; padding: 14px 16px; }
+    .stat-value { font-size: 24px; font-weight: 800; }
+    .stat-label { font-size: 12px; color: #888; margin-top: 2px; }
+    .stat.warn .stat-value { color: #d97706; }
+    .stat.ok   .stat-value { color: #16a34a; }
+    .stat.blue .stat-value { color: #1a7cb8; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; background: #f0f4f8; color: #555; font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 2px solid #e0e8f0; }
+    td { padding: 10px 12px; border-bottom: 1px solid #f0f4f8; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f8fafc; }
+
+    .badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 20px; }
+    .badge-red    { background: #fee2e2; color: #dc2626; }
+    .badge-orange { background: #ffedd5; color: #c2410c; }
+    .badge-gray   { background: #f0f4f8; color: #555; }
+    .badge-green  { background: #dcfce7; color: #16a34a; }
+
+    .reason { font-size: 12px; color: #555; margin-top: 3px; }
+    .note { background: #fffbeb; border-left: 3px solid #f59e0b; padding: 12px 16px; border-radius: 0 6px 6px 0; font-size: 13px; color: #78350f; margin-top: 16px; line-height: 1.6; }
+    .note strong { color: #92400e; }
+    .section-gap { margin-top: 24px; }
+    .truck-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+    .truck-bar { height: 24px; background: #1a7cb8; border-radius: 4px; display: flex; align-items: center; padding: 0 8px; color: white; font-size: 11px; font-weight: 600; min-width: 60px; }
+    .truck-bg { flex: 1; height: 24px; background: #e8f3fb; border-radius: 4px; position: relative; overflow: hidden; min-width: 200px; }
+    .truck-fill { height: 100%; background: #1a7cb8; border-radius: 4px; }
+    .truck-label { font-size: 12px; color: #555; min-width: 80px; }
+    .cap-label { font-size: 11px; color: #888; margin-left: 4px; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Optimizer Run — 6/17 Route Data</h1>
+  <div class="subtitle">GA truck fleet · 26ft straight trucks only · 9-hour daily cap</div>
+
+  <div class="stats">
+    <div class="stat blue">
+      <div class="stat-value">50</div>
+      <div class="stat-label">Total stops in dataset</div>
+    </div>
+    <div class="stat ok">
+      <div class="stat-value">44</div>
+      <div class="stat-label">Successfully assigned</div>
+    </div>
+    <div class="stat warn">
+      <div class="stat-value">6</div>
+      <div class="stat-label">Could not be placed</div>
+    </div>
+    <div class="stat blue">
+      <div class="stat-value">208 sq ft</div>
+      <div class="stat-label">Max per truck (26ft)</div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>🚩 Flagged Orders — Could Not Be Placed</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Customer</th>
+        <th>Delivery Address</th>
+        <th>Size</th>
+        <th>Why It Was Flagged</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Service Building Supply</strong></td>
+        <td>Sanford, NC</td>
+        <td><strong style="color:#dc2626">255.6 sq ft</strong></td>
+        <td>
+          <span class="badge badge-red">Over Capacity</span>
+          <div class="reason">255.6 sq ft exceeds the 26ft straight truck max of 208 sq ft — this stop physically won't fit. Needs a 53ft trailer (431 sq ft).</div>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>BFS – Hillsborough</strong></td>
+        <td>Hillsborough, NC</td>
+        <td>68.5 sq ft</td>
+        <td>
+          <span class="badge badge-orange">Multi-Day Route</span>
+          <div class="reason">Round-trip drive from GA plant exceeds the 9-hour daily cap. Needs overnight or separate run.</div>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>BFS – Raleigh</strong></td>
+        <td>Raleigh, NC</td>
+        <td>109.3 sq ft</td>
+        <td>
+          <span class="badge badge-orange">Multi-Day Route</span>
+          <div class="reason">Round-trip drive from GA plant exceeds the 9-hour daily cap. Needs overnight or separate run.</div>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>BFS – Auburn</strong> <span style="color:#aaa;font-size:11px;">(stop 1 of 2)</span></td>
+        <td>Opelika, AL</td>
+        <td>166.7 sq ft</td>
+        <td>
+          <span class="badge badge-orange">Multi-Day Route</span>
+          <div class="reason">Round-trip drive from GA plant exceeds the 9-hour daily cap. Needs overnight or separate run.</div>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>BFS – Auburn</strong> <span style="color:#aaa;font-size:11px;">(stop 2 of 2)</span></td>
+        <td>Opelika, AL</td>
+        <td>55.2 sq ft</td>
+        <td>
+          <span class="badge badge-orange">Multi-Day Route</span>
+          <div class="reason">Same location as stop 1 above — both flagged together.</div>
+        </td>
+      </tr>
+      <tr>
+        <td><strong>Carter Lumber Columbia</strong></td>
+        <td>Columbia, SC</td>
+        <td>187.9 sq ft</td>
+        <td>
+          <span class="badge badge-orange">Multi-Day Route</span>
+          <div class="reason">Round-trip drive from GA plant exceeds the 9-hour daily cap. Needs overnight or separate run.</div>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <strong>Note on Service Building Supply (255.6 sq ft):</strong> This stop can never go on a 26ft straight truck regardless of routing — it physically won't fit. A 53ft trailer (431 sq ft capacity) would handle it with room to spare. Is this stop normally handled with a trailer, or does it get split across two trucks?
+  </div>
+</div>
+
+<div class="card">
+  <h2 class="section-gap">✅ Out-of-State Stops That Were Placed</h2>
+  <p style="font-size:13px;color:#555;margin-bottom:14px;">These AL and SC stops fit within the 9-hour cap and were successfully assigned:</p>
+  <table>
+    <thead>
+      <tr>
+        <th>Customer</th>
+        <th>Delivery Address</th>
+        <th>Size</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>84 Lumber Company</strong></td>
+        <td>Athens, AL</td>
+        <td>66.1 sq ft</td>
+        <td><span class="badge badge-green">Assigned</span></td>
+      </tr>
+      <tr>
+        <td><strong>84 Lumber Company</strong></td>
+        <td>Bessemer, AL</td>
+        <td>48.4 sq ft</td>
+        <td><span class="badge badge-green">Assigned</span></td>
+      </tr>
+      <tr>
+        <td><strong>BFS – Chelsea Yard</strong></td>
+        <td>Chelsea, AL</td>
+        <td>16.4 sq ft</td>
+        <td><span class="badge badge-green">Assigned</span></td>
+      </tr>
+      <tr>
+        <td><strong>Harbin Lumber Co.</strong></td>
+        <td>North Augusta, SC</td>
+        <td>2.3 sq ft</td>
+        <td><span class="badge badge-green">Assigned</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>Open Questions for Joseph</h2>
+  <table>
+    <thead><tr><th>#</th><th>Question</th></tr></thead>
+    <tbody>
+      <tr>
+        <td style="font-weight:700;color:#1a7cb8;">1</td>
+        <td>Service Building Supply (255 sq ft) — does this normally go on a trailer, or split across two straight trucks?</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#1a7cb8;">2</td>
+        <td>NC/SC/AL multi-day routes — are these planned as separate overnight runs, or does a different driver/team handle them?</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#1a7cb8;">3</td>
+        <td>Are drivers full-time or contract? (Affects how the optimizer prioritizes keeping trucks active.)</td>
+      </tr>
+      <tr>
+        <td style="font-weight:700;color:#1a7cb8;">4</td>
+        <td>Does 45 minutes per stop feel right for an average unload? Any stops that consistently take more or less?</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>
