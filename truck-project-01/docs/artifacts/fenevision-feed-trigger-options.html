@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FeneVision Feed — Trigger Options</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, sans-serif; background: #f5f7fa; color: #1a1a2e; }
+
+    .header { background: #1a1a2e; color: white; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .badge { background: #4f6ef7; color: white; font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+
+    .tabs { display: flex; gap: 0; border-bottom: 2px solid #e0e0e0; background: white; padding: 0 24px; }
+    .tab { padding: 12px 20px; font-size: 14px; font-weight: 500; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -2px; color: #666; }
+    .tab.active { border-bottom-color: #4f6ef7; color: #4f6ef7; }
+
+    .content { display: none; padding: 24px; max-width: 900px; margin: 0 auto; }
+    .content.active { display: block; }
+
+    .option-label { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #4f6ef7; text-transform: uppercase; margin-bottom: 4px; }
+    h2 { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: #555; margin-bottom: 24px; font-size: 15px; }
+
+    .flow { display: flex; gap: 0; align-items: stretch; margin-bottom: 24px; flex-wrap: wrap; }
+    .flow-step { background: white; border: 1.5px solid #e0e0e0; border-radius: 10px; padding: 16px; flex: 1; min-width: 150px; position: relative; }
+    .flow-step h4 { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+    .flow-step p { font-size: 12px; color: #555; line-height: 1.5; }
+    .flow-arrow { display: flex; align-items: center; padding: 0 8px; color: #aaa; font-size: 20px; }
+
+    .mockup { background: white; border: 1.5px solid #e0e0e0; border-radius: 10px; padding: 20px; margin-bottom: 20px; position: relative; }
+    .mockup-title { font-size: 11px; color: #aaa; margin-bottom: 12px; font-weight: 600; letter-spacing: 0.5px; position: absolute; top: 8px; right: 12px; }
+
+    .app-bar { background: #1a1a2e; border-radius: 6px 6px 0 0; padding: 8px 14px; display: flex; gap: 12px; align-items: center; margin: -20px -20px 16px -20px; }
+    .app-bar span { color: #aaa; font-size: 12px; }
+    .app-bar .active-tab { color: white; font-weight: 600; border-bottom: 2px solid #4f6ef7; padding-bottom: 2px; }
+
+    .ui-row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+    .ui-label { font-size: 13px; color: #333; min-width: 120px; }
+    .ui-value { font-size: 13px; background: #f0f4ff; border: 1px solid #c5d0ff; border-radius: 4px; padding: 4px 10px; color: #333; }
+    .ui-btn { font-size: 13px; background: #4f6ef7; color: white; border: none; border-radius: 6px; padding: 6px 14px; cursor: pointer; font-weight: 600; }
+    .ui-btn.secondary { background: white; color: #4f6ef7; border: 1.5px solid #4f6ef7; }
+    .ui-btn.green { background: #22c55e; }
+    .ui-status { font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: 600; }
+    .ui-status.ok { background: #dcfce7; color: #16a34a; }
+    .ui-status.pending { background: #fef9c3; color: #854d0e; }
+    .ui-status.error { background: #fee2e2; color: #dc2626; }
+
+    .cron-line { font-family: monospace; background: #f0f4ff; border: 1px solid #c5d0ff; border-radius: 4px; padding: 8px 12px; font-size: 13px; color: #1a1a2e; margin-bottom: 8px; }
+
+    .note { background: #f0f4ff; border-left: 3px solid #4f6ef7; padding: 10px 14px; border-radius: 0 6px 6px 0; font-size: 13px; color: #1a1a2e; margin-bottom: 16px; line-height: 1.6; }
+    .note strong { color: #4f6ef7; }
+    .note.warn { border-left-color: #f59e0b; background: #fffbeb; }
+    .note.good { border-left-color: #22c55e; background: #f0fdf4; }
+
+    .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .pro, .con { background: white; border: 1.5px solid #e0e0e0; border-radius: 8px; padding: 14px; }
+    .pro h4 { color: #16a34a; font-size: 13px; margin-bottom: 8px; }
+    .con h4 { color: #dc2626; font-size: 13px; margin-bottom: 8px; }
+    .pro li, .con li { font-size: 13px; color: #444; margin-left: 16px; margin-bottom: 4px; line-height: 1.5; }
+
+    .rec { background: #1a1a2e; color: white; border-radius: 10px; padding: 20px; margin-bottom: 20px; }
+    .rec h3 { font-size: 16px; margin-bottom: 8px; }
+    .rec p { font-size: 13px; color: #aaa; line-height: 1.6; }
+    .rec strong { color: white; }
+
+    .divider { border: none; border-top: 1.5px solid #e0e0e0; margin: 20px 0; }
+
+    .pill { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; margin-right: 4px; }
+    .pill.blue { background: #e0e7ff; color: #4f6ef7; }
+    .pill.green { background: #dcfce7; color: #16a34a; }
+    .pill.yellow { background: #fef9c3; color: #854d0e; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>FeneVision Live Feed — Trigger Design Options</h1>
+  <span class="badge">Brainstorm Artifact</span>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('a')">Option A: Scheduled Pull</div>
+  <div class="tab" onclick="showTab('b')">Option B: Manual Button</div>
+  <div class="tab" onclick="showTab('c')">Option C: Both (Recommended)</div>
+  <div class="tab" onclick="showTab('questions')">Open Questions</div>
+</div>
+
+<!-- OPTION A: SCHEDULED -->
+<div id="tab-a" class="content active">
+  <div class="option-label">Option A</div>
+  <h2>Scheduled Pull</h2>
+  <p class="subtitle">A background job queries FeneVision on a fixed schedule (e.g. every morning at 5am). Orders load automatically before Joseph arrives.</p>
+
+  <div class="flow">
+    <div class="flow-step">
+      <h4>⏰ Cron / Scheduler</h4>
+      <p>macOS launchd or Windows Task Scheduler triggers a Python script at 5am daily</p>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <h4>🔌 FeneVision Query</h4>
+      <p>Script connects via VPN, runs stored procedure for today's route orders</p>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <h4>💾 Save to file</h4>
+      <p>Results written to <code>fenevision_latest.json</code> in the app data dir</p>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <h4>📊 App loads</h4>
+      <p>Joseph opens app, finds orders already loaded from last pull</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-title">MOCKUP — Add Orders tab, morning of</div>
+    <div class="app-bar">
+      <span>Add Orders</span>
+      <span class="active-tab">Load Plan</span>
+      <span>Analysis</span>
+    </div>
+    <div class="ui-row">
+      <span class="ui-label">FeneVision data</span>
+      <span class="ui-status ok">✓ Loaded 6:17 AM — 43 stops</span>
+    </div>
+    <div class="ui-row">
+      <span class="ui-label">Schedule</span>
+      <span class="ui-value">Daily at 5:00 AM</span>
+      <button class="ui-btn secondary">Change schedule</button>
+    </div>
+    <div class="ui-row">
+      <button class="ui-btn secondary">↻ Refresh now</button>
+      <span style="font-size:12px;color:#888">Last pull: today 6:17 AM (43 stops, 0 errors)</span>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>State:</strong> App reads <code>fenevision_latest.json</code> on startup. If file is missing or stale (&gt;24h), shows warning. Pull logs written to <code>fenevision_pull.log</code>.
+  </div>
+
+  <div class="pros-cons">
+    <div class="pro">
+      <h4>✓ Pros</h4>
+      <ul>
+        <li>Zero manual step for Joseph — data is just there</li>
+        <li>Pull happens before anyone is in the office</li>
+        <li>Easy to audit (log file)</li>
+      </ul>
+    </div>
+    <div class="con">
+      <h4>✗ Cons</h4>
+      <ul>
+        <li>Requires a machine to be on and on VPN at 5am</li>
+        <li>Stale if orders change after pull time</li>
+        <li>More complex setup (OS scheduler config)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- OPTION B: MANUAL BUTTON -->
+<div id="tab-b" class="content">
+  <div class="option-label">Option B</div>
+  <h2>Manual Button</h2>
+  <p class="subtitle">Joseph clicks "Pull from FeneVision" whenever he's ready to plan. Simple, explicit, no background processes.</p>
+
+  <div class="flow">
+    <div class="flow-step">
+      <h4>👆 Joseph clicks</h4>
+      <p>"Pull from FeneVision" button in the Add Orders tab</p>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <h4>🔌 Live query</h4>
+      <p>App connects to FeneVision directly, runs stored procedure, streams results</p>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <h4>📊 Orders load</h4>
+      <p>Orders populate the table in real-time. Joseph sees exactly what's current.</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-title">MOCKUP — Add Orders tab</div>
+    <div class="app-bar">
+      <span class="active-tab">Add Orders</span>
+      <span>Load Plan</span>
+      <span>Analysis</span>
+    </div>
+    <div class="ui-row" style="margin-bottom:16px;">
+      <button class="ui-btn green">⬇ Pull from FeneVision</button>
+      <span style="font-size:12px;color:#888">Pulls today's GA route orders</span>
+    </div>
+    <div class="ui-row">
+      <span class="ui-label">Connection</span>
+      <span class="ui-status ok">✓ VPN connected</span>
+    </div>
+    <div class="ui-row">
+      <span class="ui-label">Last pull</span>
+      <span class="ui-value">Today 8:42 AM — 43 stops</span>
+    </div>
+    <div class="note warn" style="margin-top:12px;">
+      <strong>⚠ Note:</strong> If not on VPN, button is disabled with message "Connect to Lindsay VPN first."
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>State:</strong> No background process. FeneVision credentials stored in <code>.env</code>. VPN status checked before button enabled. Pull result cached in session state only (gone on refresh).
+  </div>
+
+  <div class="pros-cons">
+    <div class="pro">
+      <h4>✓ Pros</h4>
+      <ul>
+        <li>Always pulls latest — no staleness risk</li>
+        <li>No OS scheduler setup needed</li>
+        <li>Joseph controls exactly when data is fresh</li>
+      </ul>
+    </div>
+    <div class="con">
+      <h4>✗ Cons</h4>
+      <ul>
+        <li>Someone must remember to click it</li>
+        <li>Adds a manual step to morning workflow</li>
+        <li>Pull happens during work hours (FeneVision load)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- OPTION C: BOTH -->
+<div id="tab-c" class="content">
+  <div class="option-label">Option C — Recommended</div>
+  <h2>Both: Scheduled + Manual Refresh</h2>
+  <p class="subtitle">Scheduled pull loads data automatically overnight. Manual "Refresh" button lets Joseph re-pull if orders changed. Best of both.</p>
+
+  <div class="flow">
+    <div class="flow-step">
+      <h4>⏰ 5am Scheduled</h4>
+      <p>Background script pulls overnight, writes to cache file</p>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <h4>📊 App opens</h4>
+      <p>Joseph sees orders already loaded, timestamp shown</p>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <h4>↻ Manual refresh</h4>
+      <p>If orders changed since 5am, Joseph clicks Refresh to re-pull</p>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">
+      <h4>📋 Diff shown</h4>
+      <p>App highlights what changed: new stops, cancels, priority bumps</p>
+    </div>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-title">MOCKUP — Add Orders tab, morning of</div>
+    <div class="app-bar">
+      <span class="active-tab">Add Orders</span>
+      <span>Load Plan</span>
+      <span>Analysis</span>
+    </div>
+    <div class="ui-row" style="margin-bottom:4px;">
+      <span class="ui-label">FeneVision data</span>
+      <span class="ui-status ok">✓ Auto-loaded 5:03 AM — 43 stops</span>
+      <button class="ui-btn secondary">↻ Refresh</button>
+    </div>
+    <div class="ui-row" style="margin-bottom:16px;">
+      <span style="font-size:12px;color:#888;margin-left:128px;">Re-pulls from FeneVision (overwrites current orders)</span>
+    </div>
+    <hr class="divider">
+    <p style="font-size:13px;font-weight:600;margin-bottom:8px;">After manual Refresh — change summary:</p>
+    <div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:12px;font-size:13px;margin-bottom:8px;">
+      <span class="pill green">+2 new</span> Valor Communities of GA, BFS Hillsborough
+    </div>
+    <div style="background:#fee2e2;border:1.5px solid #fca5a5;border-radius:8px;padding:12px;font-size:13px;">
+      <span class="pill yellow">1 changed</span> Carter Lumber Columbia — priority bumped to 9
+    </div>
+  </div>
+
+  <div class="note good">
+    <strong>Why this is the right default:</strong> Scheduled pull = zero effort for Joseph most mornings. Manual refresh = escape hatch when things change (cancellations, last-minute adds). The diff view is the key feature — it tells him exactly what changed so he doesn't re-plan from scratch.
+  </div>
+
+  <div class="rec">
+    <h3>Recommendation: Start with Manual Only</h3>
+    <p>
+      Build <strong>Option B (manual button)</strong> first. It's simpler, no scheduler config needed, and proves the FeneVision connection works.
+      Add the <strong>scheduled pull</strong> (Option A) as a follow-on once Joseph has used manual for a few weeks and trusts the data.
+      The <strong>diff view</strong> is the real value-add — build it alongside the manual pull.
+    </p>
+  </div>
+</div>
+
+<!-- OPEN QUESTIONS -->
+<div id="tab-questions" class="content">
+  <h2>Open Questions</h2>
+  <p class="subtitle">Need answers before finalizing the spec.</p>
+
+  <div class="note warn" style="margin-bottom:16px;">
+    <strong>Q1 — VPN access:</strong> Does the machine running the app have persistent VPN access to Lindsay's network, or does someone have to connect manually each morning? (This determines if scheduled pull is practical.)
+  </div>
+
+  <div class="note warn" style="margin-bottom:16px;">
+    <strong>Q2 — FeneVision connection method:</strong> Is there an existing ODBC/SQL connection string for FeneVision? Or does the data pull need to go through an API/export endpoint? Who at Lindsay can provide credentials?
+  </div>
+
+  <div class="note warn" style="margin-bottom:16px;">
+    <strong>Q3 — Route date:</strong> Does Joseph always pull <em>today's</em> routes, or does he sometimes plan a day or two ahead? (Affects the date filter in the stored procedure.)
+  </div>
+
+  <div class="note warn" style="margin-bottom:16px;">
+    <strong>Q4 — Which routes to pull:</strong> GA routes only? Or should the feed scope be configurable (GA + NC + other plants later)? The MO interplant route is already excluded — any others?
+  </div>
+
+  <div class="note warn" style="margin-bottom:16px;">
+    <strong>Q5 — IIS deployment:</strong> Once on IIS, does the FeneVision connection work from the server machine, or does each user's browser need to be on VPN? (IIS-hosted Streamlit runs server-side, so VPN needs to be on the server.)
+  </div>
+</div>
+
+<script>
+  function showTab(id) {
+    document.querySelectorAll('.content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('tab-' + id).classList.add('active');
+    event.target.classList.add('active');
+  }
+</script>
+
+</body>
+</html>

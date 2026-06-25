@@ -13,7 +13,9 @@ Constraint model:
   - Priority weighting in arc cost: urgent orders pulled to earlier stops
 """
 
+import json
 import math
+import urllib.request
 from typing import Optional
 
 from ortools.constraint_solver import routing_enums_pb2, pywrapcp
@@ -59,6 +61,21 @@ def geocode_address(address: str) -> Optional[tuple[float, float]]:
         return None
 
 
+def _osrm_table(coords: list[tuple[float, float]], server: str) -> Optional[list[list[float]]]:
+    """
+    Single OSRM /table call → N×N road distances in meters, or None on any failure.
+    Falls back gracefully so haversine takes over when OSRM is unreachable.
+    """
+    lnglat = ";".join(f"{lon},{lat}" for lat, lon in coords)
+    url = f"{server.rstrip('/')}/table/v1/driving/{lnglat}?annotations=distance"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:  # noqa: S310
+            data = json.loads(r.read())
+        return data["distances"] if data.get("code") == "Ok" else None
+    except Exception:
+        return None
+
+
 def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 3958.8
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
@@ -68,15 +85,16 @@ def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> floa
     return 2 * R * math.asin(math.sqrt(a))
 
 
-def _build_distance_matrix(coords: list[tuple[float, float]]) -> list[list[int]]:
-    """Distance in DISTANCE_SCALE units (thousandths of a mile). Used for arc cost only."""
+def _build_distance_matrix(
+    coords: list[tuple[float, float]],
+    road_m: Optional[list[list[float]]] = None,
+) -> list[list[int]]:
+    """Distance in DISTANCE_SCALE units (thousandths of a mile). road_m = OSRM meters matrix."""
     n = len(coords)
+    if road_m is not None:
+        return [[round(road_m[i][j] / 1609.344 * DISTANCE_SCALE) for j in range(n)] for i in range(n)]
     return [
-        [
-            0 if i == j
-            else round(_haversine_miles(*coords[i], *coords[j]) * DISTANCE_SCALE)
-            for j in range(n)
-        ]
+        [0 if i == j else round(_haversine_miles(*coords[i], *coords[j]) * DISTANCE_SCALE) for j in range(n)]
         for i in range(n)
     ]
 
@@ -84,15 +102,17 @@ def _build_distance_matrix(coords: list[tuple[float, float]]) -> list[list[int]]
 def _build_time_matrix(
     coords: list[tuple[float, float]],
     avg_speed_mph: float = AVG_SPEED_MPH,
+    road_m: Optional[list[list[float]]] = None,
 ) -> list[list[int]]:
-    """Travel-only time in TIME_SCALE units (hundredths of a minute). Stop time added separately."""
+    """Travel-only time in TIME_SCALE units (hundredths of a minute). road_m = OSRM meters matrix."""
     n = len(coords)
-    return [
-        [
-            0 if i == j
-            else round(_haversine_miles(*coords[i], *coords[j]) / avg_speed_mph * 60 * TIME_SCALE)
-            for j in range(n)
+    if road_m is not None:
+        return [
+            [round((road_m[i][j] / 1609.344) / avg_speed_mph * 60 * TIME_SCALE) for j in range(n)]
+            for i in range(n)
         ]
+    return [
+        [0 if i == j else round(_haversine_miles(*coords[i], *coords[j]) / avg_speed_mph * 60 * TIME_SCALE) for j in range(n)]
         for i in range(n)
     ]
 
@@ -153,6 +173,7 @@ def solve(
     straight_speed_mph: float = STRAIGHT_SPEED_MPH,
     trailer_speed_mph: float = TRAILER_SPEED_MPH,
     solver_time_limit: int = SOLVER_TIME_LIMIT_SECONDS,
+    osrm_server: str = "",
 ) -> tuple[list[TruckAssignment], list[Order]]:
     """
     Returns (assignments, dropped_orders).
@@ -170,9 +191,10 @@ def solve(
         for o in orders
     ]
 
-    distance_matrix = _build_distance_matrix(coords)
-    straight_time_matrix = _build_time_matrix(coords, straight_speed_mph)
-    trailer_time_matrix = _build_time_matrix(coords, trailer_speed_mph)
+    road_m = _osrm_table(coords, osrm_server) if osrm_server else None
+    distance_matrix = _build_distance_matrix(coords, road_m)
+    straight_time_matrix = _build_time_matrix(coords, straight_speed_mph, road_m)
+    trailer_time_matrix = _build_time_matrix(coords, trailer_speed_mph, road_m)
     stop_time_scaled = round(stop_time_minutes * TIME_SCALE)
 
     SCALE = 100

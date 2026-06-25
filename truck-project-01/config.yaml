@@ -4,7 +4,49 @@ measurement:
   abbreviation: sq ft
 trucks:
 - name: 26ft Straight
-  driver: ''
+  driver: Er
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: Bob
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: Joyce
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: Myer
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: Oscar
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: finan
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  active: true
+- name: 26ft Straight
+  driver: shri
   type: straight
   max_capacity: 208.0
   fixed_cost: 5.0
@@ -16,93 +58,9 @@ trucks:
   max_capacity: 208.0
   fixed_cost: 5.0
   cost_per_mile: 1.75
-  active: true
-- name: 26ft Straight
-  driver: ''
-  type: straight
-  max_capacity: 208.0
-  fixed_cost: 5.0
-  cost_per_mile: 1.75
-  active: true
-- name: 26ft Straight
-  driver: ''
-  type: straight
-  max_capacity: 208.0
-  fixed_cost: 5.0
-  cost_per_mile: 1.75
-  active: true
-- name: 26ft Straight
-  driver: ''
-  type: straight
-  max_capacity: 208.0
-  fixed_cost: 5.0
-  cost_per_mile: 1.75
-  active: true
-- name: 26ft Straight
-  driver: ''
-  type: straight
-  max_capacity: 208.0
-  fixed_cost: 5.0
-  cost_per_mile: 1.75
-  active: true
-- name: 26ft Straight
-  driver: ''
-  type: straight
-  max_capacity: 208.0
-  fixed_cost: 5.0
-  cost_per_mile: 1.75
-  active: true
-- name: 26ft Straight
-  driver: ''
-  type: straight
-  max_capacity: 208.0
-  fixed_cost: 5.0
-  cost_per_mile: 1.75
-  active: true
-- name: 26ft Straight
-  driver: ''
-  type: straight
-  max_capacity: 208.0
-  fixed_cost: 5.0
-  cost_per_mile: 1.75
-  active: true
-- name: 26ft Straight
-  driver: ''
-  type: straight
-  max_capacity: 208.0
-  fixed_cost: 5.0
-  cost_per_mile: 1.75
-  active: true
-- name: 53ft Trailer
-  driver: ''
-  type: trailer
-  max_capacity: 431.06
-  fixed_cost: 20.0
-  cost_per_mile: 1.5
-  active: true
-- name: 53ft Trailer
-  driver: ''
-  type: trailer
-  max_capacity: 431.06
-  fixed_cost: 20.0
-  cost_per_mile: 1.5
-  active: true
-- name: 53ft Trailer
-  driver: ''
-  type: trailer
-  max_capacity: 431.06
-  fixed_cost: 20.0
-  cost_per_mile: 1.5
-  active: true
-- name: 53ft Trailer
-  driver: ''
-  type: trailer
-  max_capacity: 431.06
-  fixed_cost: 20.0
-  cost_per_mile: 1.5
   active: true
 depot:
-  name: "Lindsay Windows — Georgia Plant"
+  name: "Lindsay Windows \u2014 Georgia Plant"
   address: ''
 routing:
   max_route_hours: 9.0

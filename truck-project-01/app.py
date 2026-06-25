@@ -203,6 +203,65 @@ def _onboarding_modal():
             st.rerun()
 
 
+_LINDSAY_CSS = """
+<style>
+/* ── Lindsay Windows design system ─────────────────────────────────────── */
+/* Colors match FeneVision BI (blue #1a7cb8, orange #F58220) +
+   the internal Inventory Count webapp (white cards, #f0f4f8 bg).         */
+
+/* Top toolbar → Lindsay blue */
+header[data-testid="stHeader"] {
+    background: #1a7cb8 !important;
+}
+header[data-testid="stHeader"] * { color: #fff !important; }
+
+/* Sidebar → light blue-gray, matches Inventory Count webapp functional style */
+section[data-testid="stSidebar"] {
+    background: #e8f3fb !important;
+    border-right: 1px solid #c5ddf0 !important;
+}
+
+/* Tabs — active tab gets orange underline */
+button[data-baseweb="tab"][aria-selected="true"] {
+    border-bottom: 3px solid #F58220 !important;
+    color: #F58220 !important;
+    font-weight: 700 !important;
+}
+
+/* Primary buttons → orange */
+div.stButton > button[kind="primary"],
+button[kind="primaryFormSubmit"] {
+    background: #F58220 !important;
+    border: none !important;
+    color: #fff !important;
+    font-weight: 700 !important;
+    border-radius: 6px !important;
+}
+div.stButton > button[kind="primary"]:hover {
+    background: #d9701a !important;
+}
+
+/* Metric cards — white with subtle shadow */
+div[data-testid="metric-container"] {
+    background: #fff;
+    border-radius: 8px;
+    padding: 12px 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+/* Info/success boxes — Lindsay blue tint */
+div[data-testid="stInfo"] {
+    border-left: 4px solid #1a7cb8 !important;
+    background: #e8f3fb !important;
+}
+</style>
+"""
+
+
+def _inject_lindsay_css() -> None:
+    st.markdown(_LINDSAY_CSS, unsafe_allow_html=True)
+
+
 def render_sidebar(cfg: dict) -> dict:
     st.sidebar.title("⚙️ Configuration")
 
@@ -260,7 +319,7 @@ def render_sidebar(cfg: dict) -> dict:
     )
 
     st.sidebar.subheader("Truck Fleet")
-    _h0, _h1, _h2, _h3, _h4 = st.sidebar.columns([2, 1.8, 1.4, 0.7, 0.5])
+    _h0, _h1, _h2, _h3, _ = st.sidebar.columns([2, 1.8, 1.4, 0.7, 0.5])
     _h0.caption("Driver")
     _h1.caption("Size")
     _h2.caption(f"Max ({abbr})")
@@ -591,6 +650,7 @@ def render_load_plan(cfg: dict):
     max_fill_pct = float(routing_cfg.get("max_fill_pct", 90)) / 100.0
     manual_truck_count = int(routing_cfg.get("manual_truck_count", 13))
     solver_time_limit = int(routing_cfg.get("solver_time_limit_seconds", 15))
+    osrm_server = routing_cfg.get("osrm_server", "")
 
     trucks = [
         Truck(
@@ -678,16 +738,18 @@ def render_load_plan(cfg: dict):
         if not errors:
             st.session_state.auto_run_pending = False
             st.session_state.dismiss_packing_issues = False
+            effective_max_hours = st.session_state.pop("overnight_cap", max_route_hours)
             anim = st.empty()
             anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
             time.sleep(1.0)  # let tab-switch JS fire before solver blocks the thread
             assignments, dropped = solve(
                 orders_copy, trucks, depot_coords,
-                max_route_hours=max_route_hours,
+                max_route_hours=effective_max_hours,
                 stop_time_minutes=stop_time_minutes,
                 straight_speed_mph=straight_speed_mph,
                 trailer_speed_mph=trailer_speed_mph,
                 solver_time_limit=solver_time_limit,
+                osrm_server=osrm_server,
             )
             st.session_state.assignments = assignments
             st.session_state.dropped = dropped
@@ -738,6 +800,7 @@ def render_load_plan(cfg: dict):
             straight_speed_mph=straight_speed_mph,
             trailer_speed_mph=trailer_speed_mph,
             solver_time_limit=solver_time_limit,
+            osrm_server=osrm_server,
         )
         st.session_state.assignments = assignments
         st.session_state.dropped = dropped
@@ -754,7 +817,13 @@ def render_load_plan(cfg: dict):
             date_str=datetime.date.today().isoformat(),
         )
         col_banner, col_dl = st.columns([3, 1])
-        col_banner.success("✅ Optimized plan ready — export route sheets for drivers below.")
+        if st.session_state.dropped:
+            col_banner.warning(
+                f"⚠ Plan ready — {len(st.session_state.assignments)} truck(s) assigned, "
+                f"but {len(st.session_state.dropped)} order(s) could not be placed. See details below."
+            )
+        else:
+            col_banner.success("✅ Optimized plan ready — export route sheets for drivers below.")
         col_dl.download_button(
             "⬇ Export Route Sheets (HTML)",
             data=html_str.encode("utf-8"),
@@ -842,7 +911,7 @@ def render_load_plan(cfg: dict):
                             f"**{truck_name} → Stop {stop_num} — {customer}** (`{order_id}`)  \n"
                             f"Max window width {w:.0f}\" exceeds truck bay {bay:.0f}\""
                         )
-                    _pc1, _pc2, _pc3 = st.columns([2, 2, 1])
+                    _pc1, _, _pc3 = st.columns([2, 2, 1])
                     if _pc1.button("Remove flagged stops from plan", type="secondary"):
                         flagged_ids = {r[3] for r in packing_issues}
                         for a in st.session_state.assignments:
@@ -895,10 +964,7 @@ def render_load_plan(cfg: dict):
                     help="Raises max route hours to 24 and re-solves. Flag these trucks for overnight.",
                     use_container_width=True,
                 ):
-                    import yaml as _yaml
-                    _cfg_now = load_config()
-                    _cfg_now["routing"]["max_route_hours"] = 24.0
-                    save_config(_cfg_now)
+                    st.session_state.overnight_cap = 24.0
                     st.session_state.auto_run_pending = True
                     st.rerun()
                 if _opt2.button(
@@ -1254,6 +1320,7 @@ def render_analysis(cfg: dict):
 
 def main():
     st.set_page_config(page_title="Lindsay Windows — Load Planner", page_icon="🪟", layout="wide")
+    _inject_lindsay_css()
     init_state()
 
     _should_show_modal = st.session_state.first_visit or st.session_state.get("_ob_navigating", False)
