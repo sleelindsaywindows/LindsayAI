@@ -18,8 +18,20 @@ body { font-family: Arial, sans-serif; font-size: 13px; color: #111; }
 
 .truck-page { padding: 24px; max-width: 760px; margin: 0 auto; }
 @media print {
-    .truck-page { page-break-before: always; padding: 16px; }
+    .truck-page { page-break-before: always; padding: 10px; }
     .truck-page:first-child { page-break-before: auto; }
+    .header { padding-bottom: 6px; margin-bottom: 10px; }
+    .header-title { font-size: 16px; }
+    .qr-section { margin-bottom: 10px; }
+    .qr-img { width: 90px; height: 90px; }
+    .stop-card { padding: 5px 0; }
+    .company { font-size: 12px; }
+    .address { font-size: 11px; }
+    .sqft { font-size: 10px; }
+    .coords { font-size: 10px; }
+    .lifo-section { padding: 8px; margin-top: 4px; }
+    .load-row { padding: 3px 0; font-size: 11px; }
+    h2 { font-size: 11px; margin-bottom: 6px; padding-bottom: 2px; }
 }
 
 .header { border-bottom: 3px solid #1a5fa8; padding-bottom: 10px; margin-bottom: 16px; }
@@ -194,9 +206,15 @@ def _truck_page_html(assignment: TruckAssignment, depot_name: str, date_str: str
         )
     lifo_html += "</div>"
 
+    driver_label = assignment.truck.driver or "Unassigned"
+    emp_badge = (
+        '<span style="background:#fff3e8;color:#b45309;font-size:10px;font-weight:700;'
+        'padding:2px 7px;border-radius:10px;margin-left:6px;vertical-align:middle;">CONTRACT</span>'
+        if assignment.truck.employment_type == "contract" else ""
+    )
     header_html = (
         f'<div class="header">'
-        f'<div class="header-title">Lindsay Windows</div>'
+        f'<div class="header-title">Lindsay Windows &mdash; {driver_label}{emp_badge}</div>'
         f'<div class="header-meta">'
         f'{date_str} &nbsp;|&nbsp; {assignment.truck.name} &nbsp;|&nbsp; '
         f'{assignment.utilization_pct:.0f}% utilized &nbsp;|&nbsp; '

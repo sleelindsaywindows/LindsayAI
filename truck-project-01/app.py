@@ -347,24 +347,28 @@ def render_sidebar(cfg: dict) -> dict:
     )
 
     st.sidebar.subheader("Truck Fleet")
-    _h0, _h1, _h2, _h3, _ = st.sidebar.columns([2, 1.8, 1.4, 0.7, 0.5])
+    _h0, _h1, _h2, _h3, _h4, _ = st.sidebar.columns([2, 1.8, 1.2, 0.7, 0.7, 0.5])
     _h0.caption("Driver")
     _h1.caption("Size")
     _h2.caption(f"Max ({abbr})")
-    _h3.caption("Use")
+    _h3.caption("CT?")
+    _h4.caption("Use")
 
     updated_trucks = []
     _delete_triggered = False
     for i, truck in enumerate(cfg["trucks"]):
-        _c0, _c1, _c2, _c3, _c4 = st.sidebar.columns([2, 1.8, 1.4, 0.7, 0.5])
+        _c0, _c1, _c2, _c3, _c4, _c5 = st.sidebar.columns([2, 1.8, 1.2, 0.7, 0.7, 0.5])
         driver = _c0.text_input("Driver", value=truck.get("driver", ""), key=f"t_driver_{i}",
                                 label_visibility="collapsed", placeholder="Driver")
         name = _c1.text_input("Size", value=truck["name"], key=f"t_name_{i}", label_visibility="collapsed")
         cap = _c2.number_input("Max", value=float(truck["max_capacity"]), key=f"t_cap_{i}",
                                min_value=0.1, label_visibility="collapsed")
-        active = _c3.checkbox("", value=bool(truck.get("active", True)), key=f"t_active_{i}",
+        is_contract = _c3.checkbox("", value=truck.get("employment_type", "fulltime") == "contract",
+                                   key=f"t_ct_{i}", label_visibility="collapsed",
+                                   help="Check if driver is a contractor (CT)")
+        active = _c4.checkbox("", value=bool(truck.get("active", True)), key=f"t_active_{i}",
                               label_visibility="collapsed")
-        delete = _c4.button("✕", key=f"t_del_{i}", help="Remove this truck")
+        delete = _c5.button("✕", key=f"t_del_{i}", help="Remove this truck")
         if delete:
             _delete_triggered = True
         else:
@@ -375,6 +379,7 @@ def render_sidebar(cfg: dict) -> dict:
                 "max_capacity": cap,
                 "fixed_cost": truck.get("fixed_cost", 5.0),
                 "cost_per_mile": truck.get("cost_per_mile", 0.0),
+                "employment_type": "contract" if is_contract else "fulltime",
                 "active": active,
             })
 
@@ -402,7 +407,7 @@ def render_sidebar(cfg: dict) -> dict:
     if st.sidebar.button("＋ Add Truck"):
         new_cfg = {
             "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
-            "trucks": updated_trucks + [{"name": "26ft Straight", "driver": "", "type": "straight", "max_capacity": 208.0, "fixed_cost": 5.0, "cost_per_mile": 1.75, "active": True}],
+            "trucks": updated_trucks + [{"name": "26ft Straight", "driver": "", "type": "straight", "max_capacity": 208.0, "fixed_cost": 5.0, "cost_per_mile": 1.75, "employment_type": "fulltime", "active": True}],
             "depot": {"name": depot_name, "address": depot_addr},
             "routing": {
                 "max_route_hours": max_hours,
@@ -691,6 +696,7 @@ def render_load_plan(cfg: dict):
             fixed_cost=t.get("fixed_cost", 5.0),
             cost_per_mile=t.get("cost_per_mile", 0.0),
             driver=t.get("driver", ""),
+            employment_type=t.get("employment_type", "fulltime"),
         )
         for t in cfg["trucks"]
         if t.get("active", True)  # skip trucks unchecked in sidebar
@@ -1043,7 +1049,7 @@ def render_load_plan(cfg: dict):
                 for s_idx, stop in enumerate(assignment.stops):
                     _fv_ids = getattr(stop.order, "fenevision_ids", None)
                     _id_label = f" · Order #{_fv_ids}" if _fv_ids else ""
-                    _btn_col, _info_col = st.columns([1, 7])
+                    _btn_col, _info_col, _chk_col = st.columns([1, 7, 1.5])
                     with _btn_col:
                         _n_stops = len(assignment.stops)
                         if st.button("↑", key=f"mv_up_{v_idx}_{s_idx}",
@@ -1130,6 +1136,12 @@ def render_load_plan(cfg: dict):
                                         use_container_width=True,
                                         hide_index=True,
                                     )
+                    with _chk_col:
+                        st.checkbox(
+                            "✓",
+                            key=f"confirmed_{v_idx}_{stop.order.order_id}",
+                            help="Mark stop as confirmed",
+                        )
             with c2:
                 st.markdown("**Load Sequence** *(load #1 first — loads deepest into truck)*")
                 for i, stop in enumerate(assignment.load_sequence, 1):

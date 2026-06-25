@@ -9,6 +9,7 @@ trucks:
   max_capacity: 208.0
   fixed_cost: 5.0
   cost_per_mile: 1.75
+  employment_type: fulltime
   active: true
 - name: 26ft Straight
   driver: Bob
@@ -16,6 +17,7 @@ trucks:
   max_capacity: 208.0
   fixed_cost: 5.0
   cost_per_mile: 1.75
+  employment_type: fulltime
   active: true
 - name: 26ft Straight
   driver: Joyce
@@ -23,6 +25,7 @@ trucks:
   max_capacity: 208.0
   fixed_cost: 5.0
   cost_per_mile: 1.75
+  employment_type: fulltime
   active: true
 - name: 26ft Straight
   driver: Myer
@@ -30,6 +33,7 @@ trucks:
   max_capacity: 208.0
   fixed_cost: 5.0
   cost_per_mile: 1.75
+  employment_type: fulltime
   active: true
 - name: 26ft Straight
   driver: Oscar
@@ -37,6 +41,7 @@ trucks:
   max_capacity: 208.0
   fixed_cost: 5.0
   cost_per_mile: 1.75
+  employment_type: fulltime
   active: true
 - name: 26ft Straight
   driver: finan
@@ -44,6 +49,7 @@ trucks:
   max_capacity: 208.0
   fixed_cost: 5.0
   cost_per_mile: 1.75
+  employment_type: fulltime
   active: true
 - name: 26ft Straight
   driver: shri
@@ -51,6 +57,7 @@ trucks:
   max_capacity: 208.0
   fixed_cost: 5.0
   cost_per_mile: 1.75
+  employment_type: fulltime
   active: true
 - name: 26ft Straight
   driver: ''
@@ -58,6 +65,7 @@ trucks:
   max_capacity: 208.0
   fixed_cost: 5.0
   cost_per_mile: 1.75
+  employment_type: fulltime
   active: true
 depot:
   name: "Lindsay Windows \u2014 Georgia Plant"
