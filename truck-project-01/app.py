@@ -365,6 +365,7 @@ def render_sidebar(cfg: dict) -> dict:
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
                 "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
                 "min_sqft_threshold": min_sqft_sidebar,
+                "osrm_server": routing.get("osrm_server", ""),
             },
         }
         save_config(_save_cfg)
@@ -385,6 +386,7 @@ def render_sidebar(cfg: dict) -> dict:
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
                 "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
                 "min_sqft_threshold": min_sqft_sidebar,
+                "osrm_server": routing.get("osrm_server", ""),
             },
         }
         save_config(new_cfg)
@@ -405,6 +407,7 @@ def render_sidebar(cfg: dict) -> dict:
                 "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
                 "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
                 "min_sqft_threshold": min_sqft_sidebar,
+                "osrm_server": routing.get("osrm_server", ""),
             },
         }
         save_config(new_cfg)
@@ -1386,8 +1389,7 @@ def main():
 </script>
 """, height=0)
 
-    plan_label = "Load Plan ✓" if st.session_state.assignments else "Load Plan"
-    tab_orders, tab_plan, tab_analysis = st.tabs(["Add Orders", plan_label, "Analysis"])
+    tab_orders, tab_plan, tab_analysis = st.tabs(["Add Orders", "Load Plan", "Analysis"])
     with tab_orders:
         render_add_orders(cfg)
     with tab_plan:
