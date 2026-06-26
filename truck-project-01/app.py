@@ -412,21 +412,37 @@ def render_add_orders(cfg: dict):
         except Exception as e:
             st.error(f"Could not read FeneVision file: {e}")
         else:
-            st.session_state.orders = new_orders
-            st.session_state.assignments = []
-            st.session_state.dropped = []
-            st.session_state.uploader_key += 1
-            st.session_state.auto_run_pending = True
-            st.session_state.fv_filename = fv_file.name
-            st.session_state._jump_plan = True
-            msg = f"✅ {len(new_orders)} stops loaded"
+            # Build a shared filter-note suffix used in both success and warning messages.
+            filter_notes = []
             if excluded:
-                msg += f" · {len(excluded)} interplant route(s) excluded"
+                filter_notes.append(f"{len(excluded)} interplant route(s) excluded")
             if skipped:
-                msg += f" · {len(skipped)} placeholder stop(s) skipped"
-            msg += " — heading to Load Plan to optimize…"
-            st.success(msg)
-            st.rerun()
+                filter_notes.append(f"{len(skipped)} placeholder stop(s) skipped")
+
+            if new_orders:
+                st.session_state.orders = new_orders
+                st.session_state.assignments = []
+                st.session_state.dropped = []
+                st.session_state.uploader_key += 1
+                st.session_state.fv_filename = fv_file.name
+                st.session_state.auto_run_pending = True
+                st.session_state._jump_plan = True
+                msg = f"✅ {len(new_orders)} stops loaded"
+                if filter_notes:
+                    msg += " · " + " · ".join(filter_notes)
+                msg += " — heading to Load Plan to optimize…"
+                st.success(msg)
+                st.rerun()
+            else:
+                if filter_notes:
+                    detail = " · ".join(filter_notes)
+                    body = f"all stops were filtered out ({detail})"
+                else:
+                    body = "the file contained no data rows"
+                st.warning(
+                    f"No orders imported — {body}. "
+                    "Check the exclusion patterns (Import Filters in sidebar) or the sqft threshold."
+                )
 
     st.divider()
     st.subheader("Upload CSV")
