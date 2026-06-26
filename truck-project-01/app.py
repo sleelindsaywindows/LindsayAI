@@ -1492,22 +1492,36 @@ def render_load_plan(cfg: dict):
         st.error("Optimizer found no solution. Check that fleet capacity covers total order space.")
         return
 
-    st.divider()
-    _all_asgn = st.session_state.assignments  # alias for reorder callbacks
-    for v_idx, assignment in enumerate(_all_asgn):
-        dist_str = f" · {assignment.route_distance_miles:.0f} mi" if assignment.route_distance_miles else ""
-        _rth = getattr(assignment, 'route_time_hours', 0.0)
-        time_str = f" · ~{_rth:.1f} hr" if _rth else ""
+    # ── Shared truck card renderer ──────────────────────────────────────────────
+    # Used for both regular and multi-day route cards. Closes over cfg, abbr,
+    # stop_time_minutes, straight_speed_mph, trailer_speed_mph, depot_coords.
+    def _render_truck_card(assignment, v_idx, all_asgn, is_overnight=False):
+        from streamlit_sortables import sort_items as _sort_items
+
         _driver = getattr(assignment.truck, "driver", "") or ""
         _driver_str = f" · {_driver}" if _driver else ""
-        _exp_icon = "🚚" if assignment.truck.truck_type == "trailer" else "🚛"
+        _exp_icon = "🌙" if is_overnight else ("🚚" if assignment.truck.truck_type == "trailer" else "🚛")
+        dist_str = f" · {assignment.route_distance_miles:.0f} mi" if assignment.route_distance_miles else ""
+        _rth = getattr(assignment, "route_time_hours", 0.0)
+        time_str = f" · ~{_rth:.1f} hr" if _rth else ""
         label = (
-            f"{_exp_icon} {assignment.truck.name}{_driver_str} — "
+            f"{_exp_icon} {'OVERNIGHT — ' if is_overnight else ''}{assignment.truck.name}{_driver_str} — "
             f"{assignment.total_capacity_used:.0f}/{assignment.truck.max_capacity:.0f} {abbr} "
             f"({assignment.utilization_pct:.0f}% utilized){dist_str}{time_str}"
         )
+        card_style = (
+            "border-left:4px solid #7c4dff;" if is_overnight else ""
+        )
+
         with st.expander(label, expanded=True):
-            # ── Inline driver name assignment ──
+            if card_style:
+                st.markdown(
+                    f"<div style='{card_style}padding-left:6px;margin-bottom:6px;"
+                    f"font-size:11px;color:#7c4dff;font-weight:700;'>🌙 OVERNIGHT RUN</div>",
+                    unsafe_allow_html=True,
+                )
+
+            # ── Inline driver assignment ──
             _d_col, _save_col, _ = st.columns([2, 1, 4])
             _new_driver = _d_col.text_input(
                 "Driver", value=_driver, key=f"driver_input_{v_idx}",
@@ -1526,11 +1540,9 @@ def render_load_plan(cfg: dict):
 
             c1, c2 = st.columns(2)
             with c1:
-                from streamlit_sortables import sort_items as _sort_items
                 st.markdown("**Delivery Sequence** — drag ⠿ to reorder · ⇄ to move truck")
 
                 # Draggable reorder (within truck)
-                # Labels are display-only; order_id stored in parallel list for mapping
                 _stop_ids_orig = [stop.order.order_id for stop in assignment.stops]
                 _sort_labels_orig = [
                     f"Stop {stop.stop_number} · {stop.order.customer_name}"
@@ -1540,14 +1552,14 @@ def render_load_plan(cfg: dict):
                 if _sorted_labels != _sort_labels_orig:
                     _label_to_id = dict(zip(_sort_labels_orig, _stop_ids_orig))
                     _new_ids = [_label_to_id[lbl] for lbl in _sorted_labels if lbl in _label_to_id]
-                    _id_to_stop = {s.order.order_id: s for s in _all_asgn[v_idx].stops}
-                    _all_asgn[v_idx].stops = [_id_to_stop[oid] for oid in _new_ids if oid in _id_to_stop]
-                    for _n, _stp in enumerate(_all_asgn[v_idx].stops, 1):
+                    _id_to_stop = {s.order.order_id: s for s in all_asgn[v_idx].stops}
+                    all_asgn[v_idx].stops = [_id_to_stop[oid] for oid in _new_ids if oid in _id_to_stop]
+                    for _n, _stp in enumerate(all_asgn[v_idx].stops, 1):
                         _stp.stop_number = _n
-                    _spd = straight_speed_mph if _all_asgn[v_idx].truck.truck_type == "straight" else trailer_speed_mph
-                    _all_asgn[v_idx].route_time_hours = (
-                        (_all_asgn[v_idx].route_distance_miles / _spd if _all_asgn[v_idx].route_distance_miles else 0.0)
-                        + len(_all_asgn[v_idx].stops) * stop_time_minutes / 60
+                    _spd = straight_speed_mph if all_asgn[v_idx].truck.truck_type == "straight" else trailer_speed_mph
+                    all_asgn[v_idx].route_time_hours = (
+                        (all_asgn[v_idx].route_distance_miles / _spd if all_asgn[v_idx].route_distance_miles else 0.0)
+                        + len(all_asgn[v_idx].stops) * stop_time_minutes / 60
                     )
                     st.rerun()
 
@@ -1557,12 +1569,11 @@ def render_load_plan(cfg: dict):
                     _is_builder = bool(stop.order.allowed_truck_types and
                                        set(stop.order.allowed_truck_types) == {"straight"})
                     _info_col, _move_col, _chk_col = st.columns([7, 2.5, 1])
-                    # Move to different truck
                     with _move_col:
-                        if len(_all_asgn) > 1:
+                        if len(all_asgn) > 1:
                             _other_opts = {
                                 f"{a.truck.name}{' · ' + a.truck.driver if a.truck.driver else ''}": i
-                                for i, a in enumerate(_all_asgn) if i != v_idx
+                                for i, a in enumerate(all_asgn) if i != v_idx
                             }
                             _dest_label = st.selectbox(
                                 "→",
@@ -1573,19 +1584,19 @@ def render_load_plan(cfg: dict):
                             if st.button("⇄ Move", key=f"mv_truck_{v_idx}_{s_idx}",
                                          use_container_width=True, help="Move to selected truck"):
                                 _dest_idx = _other_opts[_dest_label]
-                                _moving = _all_asgn[v_idx].stops.pop(s_idx)
-                                _all_asgn[_dest_idx].stops.append(_moving)
-                                for _n, _stp in enumerate(_all_asgn[v_idx].stops, 1):
+                                _moving = all_asgn[v_idx].stops.pop(s_idx)
+                                all_asgn[_dest_idx].stops.append(_moving)
+                                for _n, _stp in enumerate(all_asgn[v_idx].stops, 1):
                                     _stp.stop_number = _n
-                                for _n, _stp in enumerate(_all_asgn[_dest_idx].stops, 1):
+                                for _n, _stp in enumerate(all_asgn[_dest_idx].stops, 1):
                                     _stp.stop_number = _n
                                 for _ti in [v_idx, _dest_idx]:
-                                    _spd = straight_speed_mph if _all_asgn[_ti].truck.truck_type == "straight" else trailer_speed_mph
-                                    _all_asgn[_ti].route_time_hours = (
-                                        (_all_asgn[_ti].route_distance_miles / _spd if _all_asgn[_ti].route_distance_miles else 0.0)
-                                        + len(_all_asgn[_ti].stops) * stop_time_minutes / 60
+                                    _spd = straight_speed_mph if all_asgn[_ti].truck.truck_type == "straight" else trailer_speed_mph
+                                    all_asgn[_ti].route_time_hours = (
+                                        (all_asgn[_ti].route_distance_miles / _spd if all_asgn[_ti].route_distance_miles else 0.0)
+                                        + len(all_asgn[_ti].stops) * stop_time_minutes / 60
                                     )
-                                st.session_state.assignments = [a for a in _all_asgn if a.stops]
+                                st.session_state.assignments = [a for a in all_asgn if a.stops]
                                 st.rerun()
                     with _info_col:
                         _truck_tag = (
@@ -1646,6 +1657,7 @@ def render_load_plan(cfg: dict):
                             "✓",
                             key=f"confirmed_{v_idx}_{stop.order.order_id}",
                             help="Mark stop as confirmed",
+                            label_visibility="collapsed",
                         )
             with c2:
                 st.markdown("**Load Sequence** *(load #1 first — loads deepest into truck)*")
@@ -1702,36 +1714,27 @@ def render_load_plan(cfg: dict):
                     folium.PolyLine(route_pts, color="#1f77b4", weight=2.5, opacity=0.8).add_to(m)
                     st_folium(m, width="100%", height=350, returned_objects=[])
 
+    # ── Regular route cards ────────────────────────────────────────────────────
+    st.divider()
+    _all_asgn = st.session_state.assignments  # alias for reorder callbacks
+    for v_idx, assignment in enumerate(_all_asgn):
+        _render_truck_card(assignment, v_idx, _all_asgn)
+
     if st.session_state.get("multiday_assignments"):
         st.divider()
         _md_asgn_list = st.session_state.multiday_assignments
         _md_drp_list  = st.session_state.multiday_dropped
         _md_stops_total = sum(len(a.stops) for a in _md_asgn_list)
         st.markdown(
-            f"<div style='background:#fff8e1;border-left:4px solid #f0c040;padding:10px 16px;"
+            f"<div style='background:#f3e8ff;border-left:4px solid #7c4dff;padding:10px 16px;"
             f"border-radius:0 6px 6px 0;margin-bottom:12px;'>"
             f"<strong>🌙 Multi-Day Routes — {len(_md_asgn_list)} truck(s) · {_md_stops_total} stops</strong><br>"
-            f"<span style='font-size:12px;color:#7a5700;'>These runs exceed the 9-hr same-day cap. "
+            f"<span style='font-size:12px;color:#5a3e7a;'>These runs exceed the 9-hr same-day cap. "
             f"Dispatch overnight or schedule as a separate next-day run.</span></div>",
             unsafe_allow_html=True,
         )
-        for _md_v in _md_asgn_list:
-            _md_dist = f" · {_md_v.route_distance_miles:.0f} mi" if _md_v.route_distance_miles else ""
-            _md_time = f" · ~{getattr(_md_v,'route_time_hours',0.0):.1f} hr" if getattr(_md_v,'route_time_hours',0.0) else ""
-            _md_label = (
-                f"🌙 OVERNIGHT — {_md_v.truck.name} — "
-                f"{_md_v.total_capacity_used:.0f}/{_md_v.truck.max_capacity:.0f} {abbr} "
-                f"({_md_v.utilization_pct:.0f}%){_md_dist}{_md_time}"
-            )
-            with st.expander(_md_label, expanded=True):
-                for _md_s in _md_v.stops:
-                    _md_o = _md_s.order
-                    st.markdown(
-                        f"**{_md_s.stop_number}.** {_md_o.customer_name}  \n"
-                        f"<span style='font-size:12px;color:#555;'>{_md_o.address}</span>  \n"
-                        f"<span style='font-size:11px;color:#888;'>{_md_o.capacity_units:.0f} {abbr}</span>",
-                        unsafe_allow_html=True,
-                    )
+        for _md_vi, _md_v in enumerate(_md_asgn_list):
+            _render_truck_card(_md_v, _md_vi, _md_asgn_list, is_overnight=True)
         if _md_drp_list:
             st.warning(f"{len(_md_drp_list)} multi-day stop(s) still couldn't be assigned: "
                        + ", ".join(o.order_id for o in _md_drp_list))
@@ -2153,10 +2156,12 @@ def main():
     }, true);
   }
 
+  // Restore tab once per page load only — not on every widget rerun.
+  // __lwTabRestored is in-memory (window.parent) so it resets on full page reload
+  // but survives Streamlit widget reruns. Prevents checkbox clicks from scrolling back to tab header.
   var savedTab = parseInt(sessionStorage.getItem('lw_tab') || '0');
-  var now = Date.now();
-  if (savedTab > 0 && (now - (window.parent.__lwTabTs || 0)) > 900) {
-    window.parent.__lwTabTs = now;
+  if (savedTab > 0 && !window.parent.__lwTabRestored) {
+    window.parent.__lwTabRestored = true;
     setTimeout(function() {
       var tabs = doc.querySelectorAll('[role="tab"]');
       if (tabs && tabs[savedTab]) tabs[savedTab].click();
