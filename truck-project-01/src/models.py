@@ -20,6 +20,9 @@ class Order:
     # Max single-window width in inches for this stop, from FeneVision Width column.
     # Used to detect loads that would physically exceed truck bay width (96" for 26ft, 99" for 53ft).
     max_window_width_inches: Optional[float] = None
+    # FeneVision RouteName this stop belongs to (e.g. "6/17 Lindsay GA 26' ST").
+    # None for CSV/NL orders.
+    route_name: Optional[str] = None
     # Display-only: comma-separated FeneVision OrderNumbers for this stop (e.g. "1107512, 1106766").
     # None for CSV/NL orders. Internal order_id (R-S format) is still the optimizer key.
     fenevision_ids: Optional[str] = None
@@ -35,7 +38,7 @@ class Truck:
     max_capacity: float     # floor sq ft (practical, not theoretical)
     fixed_cost: float = 5.0     # activation penalty in equivalent miles — fills small trucks first
     cost_per_mile: float = 0.0  # $/mile placeholder for future cost objective
-    driver: str = ""            # driver name for display (Joseph assigns names per route)
+    driver: str = ""            # driver name for display (supervisor assigns names per route)
     employment_type: str = "fulltime"  # "fulltime" | "contract"
 
 

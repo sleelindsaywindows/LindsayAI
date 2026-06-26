@@ -1,0 +1,1339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lindsay Load Planner — Redesign Artifact</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+       background: #e8ecf0; min-height: 100vh; }
+.shell { max-width: 1020px; margin: 0 auto; padding: 24px 16px 48px; }
+
+.step { display: none; }
+.step.active { display: block; }
+
+.step-label { font-size: 11px; font-weight: 700; letter-spacing: 1px;
+              text-transform: uppercase; color: #1a7cb8; margin-bottom: 6px; }
+.step-title { font-size: 22px; font-weight: 800; color: #1a1a2e; margin-bottom: 4px; }
+.step-sub   { font-size: 13px; color: #555; margin-bottom: 20px; line-height: 1.6; }
+
+.nav { display: flex; gap: 10px; align-items: center; margin-top: 24px; padding-top: 16px;
+       border-top: 1px solid #dde3ea; }
+.nav-btn { padding: 9px 22px; border-radius: 6px; font-size: 13px; font-weight: 700;
+           cursor: pointer; border: none; }
+.nav-btn.primary { background: #F58220; color: #fff; }
+.nav-btn.ghost   { background: #fff; color: #1a1a2e; border: 1.5px solid #ccc; }
+.nav-spacer { flex: 1; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; cursor: pointer; display: inline-block; margin: 0 3px; }
+.dot.active { background: #F58220; }
+
+.note { background: #eef4fb; border-left: 3px solid #1a7cb8; border-radius: 0 6px 6px 0;
+        padding: 10px 14px; font-size: 12px; color: #1a3a5c; margin-top: 18px; line-height: 1.6; }
+.note strong { color: #1a7cb8; }
+
+.change-tag { display: inline-block; background: #fff3cd; color: #7a5700; font-size: 10px;
+              font-weight: 700; padding: 2px 7px; border-radius: 10px;
+              border: 1px solid #f0c040; margin-left: 8px; vertical-align: middle; }
+
+/* ── Shared: App chrome ── */
+.app-topbar { background: #1a7cb8; height: 48px; display: flex; align-items: center;
+              padding: 0 18px; gap: 10px; border-radius: 10px 10px 0 0; }
+.app-topbar-logo { width: 28px; height: 28px; background: rgba(255,255,255,0.2);
+                   border-radius: 6px; display: flex; align-items: center;
+                   justify-content: center; font-size: 13px; font-weight: 900; color: #fff; }
+.app-topbar-wm  { color: #fff; font-size: 14px; font-weight: 800; }
+.app-topbar-sub { color: rgba(255,255,255,0.6); font-size: 11px;
+                  border-left: 1px solid rgba(255,255,255,0.3); padding-left: 9px; margin-left: 2px; }
+.topbar-spacer { flex: 1; }
+.topbar-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(255,255,255,0.35); margin-left: 5px; }
+
+.app-frame { display: flex; border-radius: 0 0 10px 10px; overflow: hidden;
+             box-shadow: 0 4px 24px rgba(0,0,0,0.14); }
+
+/* Sidebar */
+.sidebar { width: 230px; background: #fff; border-right: 3px solid #1a7cb8;
+           display: flex; flex-direction: column; flex-shrink: 0; min-height: 480px; }
+.sb-logo { padding: 14px 14px 10px; border-bottom: 1px solid #eef2f7; display: flex; align-items: center; gap: 9px; }
+.sb-logo-mark { width: 30px; height: 30px; background: #1a7cb8; border-radius: 6px;
+                display: flex; align-items: center; justify-content: center;
+                color: #fff; font-size: 13px; font-weight: 900; flex-shrink: 0; }
+.sb-logo-text { font-size: 11px; font-weight: 800; color: #1a1a2e; line-height: 1.3; }
+.sb-logo-sub  { font-size: 9px; color: #999; }
+.sb-sec { padding: 10px 12px 6px; }
+.sb-sec-lbl { font-size: 9px; font-weight: 800; letter-spacing: 1.2px;
+              text-transform: uppercase; color: #1a7cb8; margin-bottom: 8px; }
+.sb-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.sb-row-lbl { font-size: 11px; color: #444; }
+.sb-chip { background: #f0f4f8; border-radius: 4px; padding: 2px 7px; font-size: 10px; color: #333; font-weight: 600; }
+.sb-div { height: 1px; background: #eef2f7; margin: 4px 12px; }
+.sb-spacer { flex: 1; }
+.sb-footer { padding: 10px 12px; border-top: 1px solid #eef2f7; }
+.sb-save { width: 100%; padding: 7px 0; background: #F58220; color: #fff; border: none;
+           border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; margin-bottom: 5px; }
+.sb-load { width: 100%; padding: 6px 0; background: #f4f6fa; color: #555; border: 1px solid #dde3ea;
+           border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; }
+
+/* Truck row in sidebar */
+.truck-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px;
+             border-radius: 6px; margin-bottom: 4px; background: #f8fafc;
+             border: 1px solid #eef2f7; }
+.truck-icon { font-size: 13px; }
+.truck-info { flex: 1; }
+.truck-name { font-size: 10px; font-weight: 700; color: #1a1a2e; }
+.truck-driver { font-size: 9px; color: #888; }
+.truck-cap { font-size: 9px; font-weight: 700; color: #1a7cb8; background: #eef4fb;
+             padding: 1px 5px; border-radius: 8px; }
+
+/* App main area */
+.app-main { flex: 1; background: #f4f6fa; display: flex; flex-direction: column; overflow: hidden; }
+.app-tabs { background: #fff; border-bottom: 2px solid #edf0f4; display: flex; padding: 0 14px; }
+.app-tab  { padding: 11px 16px; font-size: 12px; font-weight: 600; color: #666;
+            border-bottom: 3px solid transparent; margin-bottom: -2px; cursor: pointer; }
+.app-tab.active { color: #F58220; border-bottom-color: #F58220; font-weight: 800; }
+.app-body { flex: 1; padding: 16px; overflow: auto; }
+
+/* ── Screen 2: FeneVision live feed comparison ── */
+.feed-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+.feed-card { border-radius: 8px; overflow: hidden; border: 1px solid #dde3ea; }
+.feed-card-head { padding: 8px 12px; font-size: 11px; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+.feed-card-head.now    { background: #f4f4f4; color: #666; }
+.feed-card-head.future { background: #1a1a2e; color: #fff; }
+.feed-future-badge { background: #F58220; color: #fff; font-size: 9px; font-weight: 800;
+                     padding: 1px 6px; border-radius: 8px; margin-left: auto; }
+.feed-body { background: #fff; padding: 12px; }
+.feed-sync-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+                 background: #4caf50; margin-right: 5px; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.upload-card-primary { background: #fff; border: 2px dashed #1a7cb8; border-radius: 10px; padding: 20px 16px; }
+.upload-card-secondary { background: #fff; border: 1px solid #dde3ea; border-radius: 10px; padding: 16px; }
+.upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.upload-icon { font-size: 24px; margin-bottom: 6px; }
+.upload-title { font-size: 13px; font-weight: 800; color: #1a1a2e; margin-bottom: 4px; }
+.upload-sub { font-size: 11px; color: #888; margin-bottom: 12px; line-height: 1.5; }
+.upload-dropzone { background: #f0f6fc; border-radius: 6px; border: 1.5px dashed #7ab8e0;
+                   padding: 12px; text-align: center; color: #1a7cb8; font-size: 11px;
+                   font-weight: 600; margin-bottom: 10px; }
+.sec-tab-bar { display: flex; border-bottom: 1px solid #eef2f7; margin-bottom: 10px; }
+.sec-tab { padding: 6px 12px; font-size: 11px; font-weight: 600; color: #888;
+           border-bottom: 2px solid transparent; cursor: pointer; }
+.sec-tab.active { color: #1a7cb8; border-bottom-color: #1a7cb8; }
+.btn-orange { display: inline-block; padding: 8px 18px; background: #F58220; color: #fff;
+              border-radius: 6px; font-size: 12px; font-weight: 700; border: none; cursor: pointer; }
+.btn-ghost { display: inline-block; padding: 6px 14px; background: #fff; color: #444;
+             border-radius: 6px; font-size: 11px; font-weight: 600; border: 1px solid #ccc; cursor: pointer; }
+.success-banner { background: #fff; border-left: 4px solid #2e7d32; border-radius: 0 8px 8px 0;
+                  padding: 10px 14px; display: flex; align-items: center; gap: 10px;
+                  box-shadow: 0 1px 4px rgba(0,0,0,0.07); margin-bottom: 12px; }
+.success-link { font-size: 12px; color: #1a7cb8; font-weight: 700; text-decoration: none; }
+.form-row { margin-bottom: 8px; }
+.form-label { font-size: 10px; font-weight: 700; color: #666; margin-bottom: 3px; }
+.form-input { width: 100%; padding: 6px 8px; border: 1px solid #dde3ea; border-radius: 5px;
+              font-size: 11px; color: #1a1a2e; background: #fafcfe; }
+
+/* ── Screen 3: Pre-solve ── */
+.metrics-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+.metric-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); padding: 12px 14px; }
+.metric-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: #888; margin-bottom: 3px; }
+.metric-value { font-size: 22px; font-weight: 800; color: #1a1a2e; line-height: 1; }
+.metric-unit  { font-size: 10px; color: #999; margin-top: 2px; }
+.metric-card.warn .metric-value { color: #d97706; }
+.metric-card.ok   .metric-value { color: #2e7d32; }
+.mode-selector { display: flex; gap: 8px; margin-bottom: 20px; }
+.mode-pill { padding: 8px 20px; border-radius: 50px; font-size: 12px; font-weight: 700;
+             cursor: pointer; border: 2px solid #dde3ea; color: #666; background: #fff; }
+.mode-pill.active { background: #1a7cb8; color: #fff; border-color: #1a7cb8; }
+.solve-block { text-align: center; padding: 16px 0 6px; }
+.solve-btn { display: inline-flex; align-items: center; gap: 10px; padding: 15px 44px;
+             background: #F58220; color: #fff; border: none; border-radius: 8px;
+             font-size: 16px; font-weight: 800; cursor: pointer;
+             box-shadow: 0 4px 14px rgba(245,130,32,0.35); }
+.solve-caption { font-size: 11px; color: #999; margin-top: 8px; }
+
+/* ── Screen 4: Post-solve route cards ── */
+.route-card { background: #fff; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.09);
+              margin-bottom: 14px; overflow: hidden; }
+.route-card-header { padding: 13px 16px; display: flex; align-items: center; gap: 8px;
+                     border-bottom: 1px solid #f0f2f5; }
+.route-truck-name { font-size: 14px; font-weight: 800; color: #1a1a2e; flex: 1; }
+.lifo-badge { font-size: 10px; font-weight: 700; background: #eef4fb; color: #1a7cb8;
+              padding: 3px 8px; border-radius: 10px; border: 1px solid #c4daf5; }
+.util-pill { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 10px; }
+.util-green { background: #e8f5e9; color: #2e7d32; }
+.util-amber { background: #fff8e1; color: #b45309; }
+.util-bar-wrap { height: 4px; background: #f0f2f5; }
+.util-bar { height: 4px; }
+.util-bar.green { background: #4caf50; }
+.util-bar.amber { background: #f59e0b; }
+.stop-list-header { padding: 7px 16px 4px; font-size: 9px; font-weight: 800; color: #aaa;
+                    text-transform: uppercase; letter-spacing: 0.6px; }
+.stop-row { display: flex; align-items: center; gap: 9px; padding: 9px 16px;
+            border-bottom: 1px solid #f4f6fa; cursor: grab; }
+.stop-row:last-child { border-bottom: none; }
+.drag-handle { font-size: 14px; color: #c0c8d4; flex-shrink: 0; cursor: grab; user-select: none; }
+.drag-handle:hover { color: #1a7cb8; }
+.stop-num-circle { width: 24px; height: 24px; border-radius: 50%; background: #1a7cb8;
+                   color: #fff; font-size: 11px; font-weight: 800; display: flex;
+                   align-items: center; justify-content: center; flex-shrink: 0; }
+.stop-info { flex: 1; }
+.stop-name { font-size: 13px; font-weight: 700; color: #1a1a2e; }
+.stop-addr { font-size: 11px; color: #888; margin-top: 1px; }
+.stop-orders { font-size: 10px; color: #1a7cb8; font-family: monospace; margin-top: 3px; }
+.stop-truck-tag { font-size: 9px; color: #666; background: #f0f4f8; border-radius: 8px;
+                  padding: 1px 6px; margin-left: 6px; font-weight: 600; }
+.move-btn { font-size: 10px; color: #aaa; background: #f4f6fa; border: 1px solid #e4e8ee;
+            border-radius: 4px; padding: 3px 7px; cursor: pointer; white-space: nowrap; }
+.move-btn:hover { color: #1a7cb8; border-color: #1a7cb8; }
+
+/* ── Screens 5+6: Route Sheet ── */
+/* Shared nav: new brand font/color */
+.rs-font { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+
+.compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.compare-label { font-size: 10px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+                 padding: 5px 10px; border-radius: 4px; margin-bottom: 8px; display: inline-block; }
+.compare-label.old { background: #f4f4f4; color: #888; }
+.compare-label.new { background: #1a1a2e; color: #F58220; }
+
+/* OLD sheet */
+.sheet-old { border: 1px solid #ddd; border-radius: 6px; overflow: hidden; font-size: 12px; font-family: Arial,sans-serif; }
+.sheet-old-hdr { background: #1a5fa8; color: #fff; padding: 11px 13px; }
+.sheet-old-hdr h3 { font-size: 13px; margin-bottom: 2px; }
+.sheet-old-hdr p  { font-size: 10px; opacity: 0.7; }
+.sheet-old-stop { padding: 8px 13px; border-bottom: 1px solid #eee; display: flex; gap: 8px; }
+.sheet-old-num { font-size: 16px; font-weight: 800; color: #1a5fa8; min-width: 26px; }
+.sheet-old-lifo { background: #f5f5f5; border: 1px solid #ddd; margin: 8px;
+                  border-radius: 4px; padding: 8px; font-size: 11px; }
+
+/* NEW sheet */
+.sheet-new { border: 1px solid #2a2a40; border-radius: 8px; overflow: hidden;
+             font-size: 12px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
+.sheet-new-hdr { background: #1a1a2e; color: #fff; padding: 13px 15px;
+                 display: flex; align-items: flex-start; justify-content: space-between; }
+.sheet-new-hdr-l h3 { font-size: 14px; font-weight: 800; display: flex; align-items: center; gap: 7px; }
+.sheet-new-hdr-l p  { font-size: 10px; color: rgba(255,255,255,0.5); margin-top: 3px; }
+.sheet-new-hdr-r { text-align: right; }
+.sheet-new-driver { font-size: 13px; font-weight: 800; color: #F58220; }
+.sheet-new-meta   { font-size: 10px; color: rgba(255,255,255,0.45); margin-top: 2px; }
+
+.sheet-new-qr { display: flex; gap: 10px; padding: 10px 12px;
+                background: #22223a; border-bottom: 1px solid #33335a; align-items: center; }
+.qr-box { width: 54px; height: 54px; background: #fff; border-radius: 4px;
+          display: flex; align-items: center; justify-content: center;
+          font-size: 9px; color: #888; font-weight: 700; flex-shrink: 0; }
+.qr-actions { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.qr-maps-btn { background: #4285f4; color: #fff; border: none; border-radius: 5px;
+               padding: 7px 10px; font-size: 11px; font-weight: 800; cursor: pointer;
+               text-align: center; width: 100%; }
+.qr-row-btns { display: flex; gap: 4px; }
+.qr-share-btn { flex: 1; background: #1a7cb8; color: #fff; border: none; border-radius: 5px;
+                padding: 5px; font-size: 10px; font-weight: 700; cursor: pointer; text-align: center; }
+.qr-copy-btn  { flex: 1; background: #f4f4f4; color: #333; border: 1px solid #ccc; border-radius: 5px;
+                padding: 5px; font-size: 10px; font-weight: 600; cursor: pointer; text-align: center; }
+
+.sheet-new-stop { padding: 9px 12px; border-bottom: 1px solid #f0f2f5;
+                  display: flex; gap: 10px; align-items: flex-start;
+                  border-left: 3px solid #1a7cb8; }
+.sn-circle { width: 22px; height: 22px; border-radius: 50%; background: #1a7cb8;
+             color: #fff; font-size: 10px; font-weight: 800; display: flex;
+             align-items: center; justify-content: center; flex-shrink: 0; margin-top: 2px; }
+.sn-name { font-size: 13px; font-weight: 800; color: #1a1a2e; }
+.sn-addr { font-size: 10px; color: #666; margin-top: 2px; line-height: 1.4; }
+.sn-orders { font-size: 10px; color: #1a7cb8; font-family: monospace; margin-top: 3px;
+             background: #eef4fb; display: inline-block; padding: 1px 6px; border-radius: 4px; }
+.sn-note { font-size: 10px; color: #b85c00; margin-top: 3px; }
+
+.sheet-new-lifo { background: #fff8f2; border-left: 4px solid #F58220;
+                  padding: 10px 12px; font-size: 11px; font-family: inherit; }
+.sn-lifo-head { font-size: 9px; font-weight: 800; color: #F58220; text-transform: uppercase;
+                letter-spacing: 0.6px; margin-bottom: 6px; }
+.sn-lifo-row { padding: 4px 0; color: #444; border-bottom: 1px solid #f5ece4;
+               font-size: 11px; }
+.sn-lifo-row:last-child { border-bottom: none; }
+.sn-lifo-num { font-weight: 800; color: #1a7cb8; }
+
+/* Phone mockup */
+.phone-wrap { width: 310px; background: #1a1a2e; border-radius: 36px;
+              padding: 10px; box-shadow: 0 8px 40px rgba(0,0,0,0.28); }
+.phone-notch { width: 90px; height: 20px; background: #111; border-radius: 10px;
+               margin: 0 auto 6px; }
+.phone-screen { background: #fff; border-radius: 22px; overflow: hidden; }
+.ph-status { background: #1a1a2e; color: rgba(255,255,255,0.6); font-size: 9px;
+             padding: 5px 12px; display: flex; justify-content: space-between; }
+.ph-hdr { background: #1a1a2e; padding: 10px 13px 12px; }
+.ph-title { color: #fff; font-size: 13px; font-weight: 800; }
+.ph-meta  { color: rgba(255,255,255,0.5); font-size: 10px; margin-top: 1px; }
+.ph-badge { display: inline-block; background: #fff3cd; color: #7a5700;
+            font-size: 9px; font-weight: 800; padding: 2px 7px; border-radius: 7px; margin-top: 5px; }
+.ph-qr { padding: 10px 12px; background: #22223a; }
+.ph-qr-row { display: flex; gap: 10px; align-items: center; }
+.ph-qr-box { width: 62px; height: 62px; background: #fff; border-radius: 5px;
+             display: flex; align-items: center; justify-content: center;
+             font-size: 8px; color: #888; font-weight: 700; flex-shrink: 0; }
+.ph-btns { flex: 1; display: flex; flex-direction: column; gap: 5px; }
+.ph-btn-maps { background: #4285f4; color: #fff; border: none; border-radius: 7px;
+               padding: 11px; font-size: 12px; font-weight: 800; text-align: center;
+               min-height: 44px; cursor: pointer; }
+.ph-btn-share { background: #1a7cb8; color: #fff; border: none; border-radius: 7px;
+                padding: 8px; font-size: 11px; font-weight: 700; text-align: center; cursor: pointer; }
+.ph-btn-copy  { background: #f4f4f4; color: #333; border: 1px solid #ddd; border-radius: 7px;
+                padding: 7px; font-size: 10px; font-weight: 600; text-align: center; cursor: pointer; }
+.ph-stops { padding: 8px 12px; background: #fff; }
+.ph-stop { display: flex; align-items: flex-start; gap: 7px; padding: 7px 0;
+           border-bottom: 1px solid #f4f6fa; border-left: 2px solid #1a7cb8;
+           padding-left: 8px; margin-left: -2px; }
+.ph-num { width: 18px; height: 18px; border-radius: 50%; background: #1a7cb8;
+          color: #fff; font-size: 9px; font-weight: 800; display: flex;
+          align-items: center; justify-content: center; flex-shrink: 0; }
+.ph-sname { font-size: 11px; font-weight: 700; color: #1a1a2e; }
+.ph-saddr { font-size: 9px; color: #888; margin-top: 1px; }
+.ph-sorders { font-size: 9px; color: #1a7cb8; font-family: monospace; margin-top: 2px; }
+.ph-nav { font-size: 14px; margin-left: auto; align-self: center; }
+.ph-more { padding: 6px 12px; font-size: 9px; color: #bbb; text-align: center; background: #fff; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<div style="text-align:center;margin-bottom:20px;">
+  <span class="dot active" onclick="go(1)"></span>
+  <span class="dot" onclick="go(2)"></span>
+  <span class="dot" onclick="go(3)"></span>
+  <span class="dot" onclick="go(4)"></span>
+  <span class="dot" onclick="go(5)"></span>
+  <span class="dot" onclick="go(6)"></span>
+  <span class="dot" onclick="go(7)"></span>
+  <span class="dot" onclick="go(8)"></span>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN 1 — App Shell & Sidebar (full fleet, real content)
+     ══════════════════════════════════════════════════════ -->
+<div id="s1" class="step active">
+  <div class="step-label">Screen 1 of 6 · Part A — Streamlit App</div>
+  <div class="step-title">App Shell &amp; Sidebar</div>
+  <div class="step-sub">
+    Sidebar: white bg + blue left border — orange reserved for CTAs only.
+    Fleet section shows all 3 trucks individually with driver + capacity.
+    Main area shows actual Load Plan tab content (post-import, pre-solve).
+    <span class="change-tag">CSS only — no Python logic changes</span>
+  </div>
+
+  <div style="border-radius:10px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.15);">
+    <div class="app-topbar">
+      <div class="app-topbar-logo">L</div>
+      <div class="app-topbar-wm">Lindsay Windows</div>
+      <div class="app-topbar-sub">Load Planner</div>
+      <div class="topbar-spacer"></div>
+      <div class="topbar-dot"></div><div class="topbar-dot"></div><div class="topbar-dot"></div>
+    </div>
+    <div class="app-frame">
+
+      <!-- Sidebar -->
+      <div class="sidebar">
+        <div class="sb-logo">
+          <div class="sb-logo-mark">L</div>
+          <div>
+            <div class="sb-logo-text">Lindsay Windows</div>
+            <div class="sb-logo-sub">Load Planner v2 · GA Plant</div>
+          </div>
+        </div>
+
+        <div class="sb-sec">
+          <div class="sb-sec-lbl" style="display:flex;align-items:center;">
+            Fleet — Today's Trucks
+            <span style="margin-left:auto;font-size:9px;font-weight:700;color:#aaa;">847 sq ft total</span>
+          </div>
+          <div class="truck-row">
+            <div class="truck-icon">🚛</div>
+            <div class="truck-info">
+              <div class="truck-name">26ft Straight #1</div>
+              <div class="truck-driver">Raymond · 208 sq ft</div>
+            </div>
+            <div style="display:flex;gap:3px;margin-left:4px;">
+              <div style="width:16px;height:16px;border-radius:3px;background:#fdeaea;color:#c62828;
+                          font-size:11px;font-weight:800;display:flex;align-items:center;
+                          justify-content:center;cursor:pointer;" title="Remove truck">×</div>
+            </div>
+          </div>
+          <div class="truck-row">
+            <div class="truck-icon">🚛</div>
+            <div class="truck-info">
+              <div class="truck-name">26ft Straight #2</div>
+              <div class="truck-driver">Juan · 208 sq ft</div>
+            </div>
+            <div style="display:flex;gap:3px;margin-left:4px;">
+              <div style="width:16px;height:16px;border-radius:3px;background:#fdeaea;color:#c62828;
+                          font-size:11px;font-weight:800;display:flex;align-items:center;
+                          justify-content:center;cursor:pointer;" title="Remove truck">×</div>
+            </div>
+          </div>
+          <div class="truck-row" style="border-color:#F5822033;background:#fff8f2;">
+            <div class="truck-icon">🚚</div>
+            <div class="truck-info">
+              <div class="truck-name">53ft Trailer #1</div>
+              <div class="truck-driver" style="color:#b45309;">Kristin · 431 sq ft</div>
+            </div>
+            <div style="display:flex;gap:3px;margin-left:4px;">
+              <div style="width:16px;height:16px;border-radius:3px;background:#fdeaea;color:#c62828;
+                          font-size:11px;font-weight:800;display:flex;align-items:center;
+                          justify-content:center;cursor:pointer;" title="Remove truck">×</div>
+            </div>
+          </div>
+          <!-- Add Truck button -->
+          <div style="display:flex;gap:5px;margin-top:7px;">
+            <button style="flex:1;padding:5px 0;background:#eef4fb;border:1.5px dashed #1a7cb8;
+                           border-radius:6px;font-size:10px;font-weight:800;color:#1a7cb8;cursor:pointer;">
+              + 26ft Straight
+            </button>
+            <button style="flex:1;padding:5px 0;background:#fff8f2;border:1.5px dashed #F58220;
+                           border-radius:6px;font-size:10px;font-weight:800;color:#F58220;cursor:pointer;">
+              + 53ft Trailer
+            </button>
+          </div>
+        </div>
+
+        <div class="sb-div"></div>
+
+        <div class="sb-sec">
+          <div class="sb-sec-lbl">Routing Config</div>
+          <div class="sb-row">
+            <span class="sb-row-lbl">Max route hrs</span>
+            <span class="sb-chip">9.0 hr</span>
+          </div>
+          <div class="sb-row">
+            <span class="sb-row-lbl">Stop time</span>
+            <span class="sb-chip">45 min</span>
+          </div>
+          <div class="sb-row">
+            <span class="sb-row-lbl">Straight speed</span>
+            <span class="sb-chip">47 mph</span>
+          </div>
+          <div class="sb-row">
+            <span class="sb-row-lbl">Trailer speed</span>
+            <span class="sb-chip">40 mph</span>
+          </div>
+          <div class="sb-row">
+            <span class="sb-row-lbl">Depot</span>
+            <span class="sb-chip">Shakopee MN</span>
+          </div>
+        </div>
+
+        <div class="sb-div"></div>
+
+        <div class="sb-sec">
+          <div class="sb-sec-lbl">Routing Mode</div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <div style="background:#eef4fb;border:1.5px solid #1a7cb8;border-radius:6px;
+                        padding:6px 8px;font-size:10px;font-weight:800;color:#1a7cb8;">● All Orders</div>
+            <div style="background:#f4f6fa;border:1px solid #dde3ea;border-radius:6px;
+                        padding:6px 8px;font-size:10px;color:#888;">○ Two-Phase (Distrib → Builder)</div>
+          </div>
+        </div>
+
+        <div class="sb-spacer"></div>
+        <div class="sb-footer">
+          <button class="sb-save">💾 Save Plan</button>
+          <button class="sb-load">📂 Load Plan</button>
+        </div>
+      </div>
+
+      <!-- Main content: post-solve state — routes on top, controls below -->
+      <div class="app-main">
+        <div class="app-tabs">
+          <div class="app-tab">Add Orders</div>
+          <div class="app-tab active">Load Plan</div>
+          <div class="app-tab">Analysis</div>
+        </div>
+        <div class="app-body" style="overflow-y:auto;">
+
+          <!-- FeneVision combined source widget -->
+          <div style="background:#fff;border-radius:8px;border:1px solid #dde3ea;
+                      padding:9px 12px;margin-bottom:10px;display:flex;align-items:center;gap:10px;">
+            <span style="font-size:13px;">📊</span>
+            <div style="flex:1;">
+              <div style="font-size:11px;font-weight:800;color:#1a1a2e;">GA_Trucks_2026-06-17.xlsx</div>
+              <div style="font-size:10px;color:#888;margin-top:1px;">34 stops · imported 6:47 AM · manual upload</div>
+            </div>
+            <div style="display:flex;gap:5px;">
+              <div style="font-size:9px;font-weight:700;background:#e8f5e9;color:#2e7d32;
+                          padding:2px 7px;border-radius:8px;">✓ Loaded</div>
+              <div style="font-size:9px;font-weight:700;background:#1a1a2e;color:#F58220;
+                          padding:2px 7px;border-radius:8px;cursor:pointer;" title="Live feed: roadmap">⚡ Live Feed →</div>
+            </div>
+          </div>
+
+          <!-- OPTIMIZED ROUTES — shown first (post-solve) -->
+          <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;
+                      color:#1a7cb8;margin-bottom:6px;">✅ Optimized Routes — 3 trucks · 34 stops</div>
+
+          <!-- Route card 1 (mini) -->
+          <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.08);
+                      margin-bottom:7px;overflow:hidden;">
+            <div style="padding:8px 12px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f0f2f5;">
+              <span style="font-size:13px;">🚛</span>
+              <div style="flex:1;font-size:11px;font-weight:800;color:#1a1a2e;">26ft Straight #1 — Raymond</div>
+              <div style="font-size:9px;background:#e8f5e9;color:#2e7d32;padding:2px 7px;border-radius:8px;font-weight:800;">72% · ~6.2 hr</div>
+            </div>
+            <div style="height:3px;background:#f0f2f5;"><div style="width:72%;height:3px;background:#4caf50;"></div></div>
+            <div style="padding:5px 12px;font-size:10px;color:#888;">Stops: Acme Atlanta · Macon Builder · Carter Forsyth · BFS Gainesville</div>
+          </div>
+
+          <!-- Route card 2 (mini) -->
+          <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.08);
+                      margin-bottom:7px;overflow:hidden;">
+            <div style="padding:8px 12px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f0f2f5;">
+              <span style="font-size:13px;">🚛</span>
+              <div style="flex:1;font-size:11px;font-weight:800;color:#1a1a2e;">26ft Straight #2 — Juan</div>
+              <div style="font-size:9px;background:#fff8e1;color:#b45309;padding:2px 7px;border-radius:8px;font-weight:800;">85% · ~7.8 hr</div>
+            </div>
+            <div style="height:3px;background:#f0f2f5;"><div style="width:85%;height:3px;background:#f59e0b;"></div></div>
+            <div style="padding:5px 12px;font-size:10px;color:#888;">Stops: Athens Supply · Alpharetta HB · Smyrna HB · Canton HB · + 3 more</div>
+          </div>
+
+          <!-- Route card 3 (mini) -->
+          <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.08);
+                      margin-bottom:10px;overflow:hidden;">
+            <div style="padding:8px 12px;display:flex;align-items:center;gap:7px;border-bottom:1px solid #f0f2f5;">
+              <span style="font-size:13px;">🚚</span>
+              <div style="flex:1;font-size:11px;font-weight:800;color:#1a1a2e;">53ft Trailer #1 — Kristin</div>
+              <div style="font-size:9px;background:#fff8e1;color:#b45309;padding:2px 7px;border-radius:8px;font-weight:800;">88% · ~8.8 hr</div>
+            </div>
+            <div style="height:3px;background:#f0f2f5;"><div style="width:88%;height:3px;background:#f59e0b;"></div></div>
+            <div style="padding:5px 12px;font-size:10px;color:#888;">Stops: Savannah Glass · Brunswick · Statesboro · Valdosta · + 5 more</div>
+          </div>
+
+          <!-- Re-solve strip below routes -->
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 0 0;">
+            <button style="flex:1;padding:9px 0;background:#F58220;color:#fff;border:none;
+                           border-radius:7px;font-size:12px;font-weight:800;cursor:pointer;">
+              🔄 Re-Optimize
+            </button>
+            <div style="font-size:9px;color:#aaa;flex:1.5;line-height:1.5;">
+              34 stops assigned · 0 dropped<br>
+              All Orders mode · geocoding on
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>CSS target:</strong> <code>section[data-testid="stSidebar"]</code> → <code>background:#fff; border-left:4px solid #1a7cb8;</code><br>
+    <strong>Add/Remove truck:</strong> + buttons append to <code>config.yaml</code> trucks list via <code>save_config()</code>. × button removes by index. Both trigger <code>st.rerun()</code>. Truck rows already injected via <code>st.markdown()</code> in sidebar — add inline +/× buttons per row.<br>
+    <strong>Route cards on top:</strong> If <code>st.session_state.assignments</code> exists, render route cards first in <code>render_load_plan()</code>, then show "Re-Optimize" button below instead of the primary solve button. Pre-solve shows primary Optimize button.<br>
+    <strong>Combined FeneVision widget:</strong> Single compact row showing filename + import time + "Live Feed →" pill (greyed roadmap state). Replaces the "Geocoding active" caption. One source of truth for data provenance.
+  </div>
+
+  <div class="nav">
+    <div class="nav-spacer"></div>
+    <button class="nav-btn primary" onclick="go(2)">Next → Add Orders Tab</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN 2 — Add Orders Tab (live feed comparison + English entry)
+     ══════════════════════════════════════════════════════ -->
+<div id="s2" class="step">
+  <div class="step-label">Screen 2 of 6 · Part A — Streamlit App</div>
+  <div class="step-title">Add Orders Tab</div>
+  <div class="step-sub">
+    Top: Current (manual xlsx upload) vs Future (FeneVision live feed) side by side.
+    Import cards: FeneVision primary (left), CSV / Manual / English (plain language) secondary tabs (right).
+    "NL Parse" renamed to "English" — plain description of an order in plain language.
+  </div>
+
+  <div style="background:#f4f6fa;border-radius:10px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.08);">
+
+    <!-- Success banner (post-import) -->
+    <div class="success-banner">
+      <span style="font-size:18px;">✅</span>
+      <div style="flex:1;">
+        <div style="font-size:13px;font-weight:700;color:#1a1a2e;">34 stops loaded · 1 interplant route excluded</div>
+        <div style="font-size:11px;color:#666;margin-top:2px;">Geocoding queued for Load Plan tab</div>
+      </div>
+      <a class="success-link" href="#">Go to Load Plan →</a>
+    </div>
+
+    <!-- Current vs Future: FeneVision feed -->
+    <div style="font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;
+                color:#1a7cb8;margin-bottom:10px;">How Orders Get In</div>
+    <div class="feed-compare">
+      <!-- Current -->
+      <div class="feed-card">
+        <div class="feed-card-head now">📁 Now — Manual Upload</div>
+        <div class="feed-body">
+          <div style="font-size:11px;color:#555;margin-bottom:8px;line-height:1.5;">
+            Joseph exports GA Trucks .xlsx from FeneVision BI each morning. Drag it in here to load stops.
+          </div>
+          <div style="background:#f0f6fc;border:1.5px dashed #7ab8e0;border-radius:6px;
+                      padding:10px;text-align:center;color:#1a7cb8;font-size:11px;font-weight:600;margin-bottom:8px;">
+            📊 Drag GA_Trucks_2026-06-17.xlsx here
+          </div>
+          <button class="btn-orange" style="width:100%;padding:7px 0;">Import File</button>
+          <div style="font-size:9px;color:#aaa;margin-top:5px;">Last import: GA_Trucks_2026-06-17.xlsx · 6:47 AM</div>
+        </div>
+      </div>
+      <!-- Future -->
+      <div class="feed-card">
+        <div class="feed-card-head future">
+          ⚡ Future — Live FeneVision Feed
+          <span class="feed-future-badge">ROADMAP</span>
+        </div>
+        <div class="feed-body" style="background:#fafcff;">
+          <div style="font-size:11px;color:#555;margin-bottom:8px;line-height:1.5;">
+            Orders sync automatically from FeneVision SQL. No manual export needed. Loads refresh at scheduled intervals.
+          </div>
+          <div style="background:#e8f5e9;border-radius:6px;padding:10px 12px;margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:800;color:#2e7d32;display:flex;align-items:center;gap:6px;">
+              <span class="feed-sync-dot"></span> Live — 34 stops synced
+            </div>
+            <div style="font-size:10px;color:#555;margin-top:3px;">Last sync: 4:23 AM · Next: 5:00 AM</div>
+            <div style="font-size:10px;color:#888;margin-top:2px;">Changes since last sync: 2 added · 1 cancelled</div>
+          </div>
+          <button class="btn-ghost" style="width:100%;padding:7px 0;opacity:0.6;cursor:not-allowed;">🔄 Sync Now</button>
+          <div style="font-size:9px;color:#aaa;margin-top:5px;">Requires FeneVision VPN + IT credentials — blocked on IT setup</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FeneVision primary + secondary tabs -->
+    <div style="margin-top:14px;">
+      <div style="font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;
+                  color:#1a7cb8;margin-bottom:10px;">Add Individual Orders</div>
+      <div class="upload-grid">
+        <!-- Primary: FeneVision xlsx -->
+        <div class="upload-card-primary">
+          <div class="upload-icon">📊</div>
+          <div class="upload-title">FeneVision Export</div>
+          <div class="upload-sub">Batch import from GA Trucks .xlsx. Aggregates line items → stops. Excludes interplant routes automatically.</div>
+          <div class="upload-dropzone">Drag &amp; drop .xlsx here<br><span style="font-size:10px;color:#7ab8e0;font-weight:400;">or click to browse</span></div>
+          <button class="btn-orange" style="width:100%;">Import FeneVision File</button>
+        </div>
+        <!-- Secondary: CSV / Manual / English -->
+        <div class="upload-card-secondary">
+          <div class="sec-tab-bar">
+            <div class="sec-tab">CSV Upload</div>
+            <div class="sec-tab active">Manual Entry</div>
+            <div class="sec-tab">English</div>
+          </div>
+
+          <!-- Manual Entry tab (active for this mockup) -->
+          <div style="font-size:11px;color:#666;margin-bottom:8px;line-height:1.5;">
+            Enter one stop at a time. Use for walk-in orders or corrections not yet in FeneVision.
+          </div>
+          <div class="form-row">
+            <div class="form-label">Order ID</div>
+            <input class="form-input" type="text" placeholder="e.g. W-2347" readonly>
+          </div>
+          <div class="form-row">
+            <div class="form-label">Customer Name</div>
+            <input class="form-input" type="text" placeholder="Acme Windows Atlanta" readonly>
+          </div>
+          <div class="form-row">
+            <div class="form-label">Delivery Address</div>
+            <input class="form-input" type="text" placeholder="142 Main St, Atlanta GA 30301" readonly>
+          </div>
+          <div class="form-row">
+            <div class="form-label">Floor Space (sq ft)</div>
+            <input class="form-input" type="text" placeholder="84" style="width:80px;" readonly>
+          </div>
+          <button class="btn-orange" style="margin-top:4px;">Add Stop</button>
+        </div>
+      </div>
+
+      <!-- English tab explanation callout -->
+      <div style="background:#fff8f2;border-left:3px solid #F58220;border-radius:0 6px 6px 0;
+                  padding:10px 14px;margin-top:10px;font-size:12px;color:#7a3500;">
+        <strong style="color:#F58220;">English tab</strong> — Type a natural description and Claude parses it into a stop.
+        Example: <em>"Deliver 84 sq ft of windows to Acme Windows at 142 Main St Atlanta — gate code 4421, priority"</em>
+        → auto-fills all fields. Uses two-agent parse: Haiku parses, second Haiku verifies independently.
+      </div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <strong>State:</strong> <code>orders</code> in session. <code>uploader_key += 1</code> resets widget. <code>auto_geocode_pending = True</code> on xlsx import.<br>
+    <strong>Live feed:</strong> blocked on FeneVision VPN + IT credentials. UI shows greyed-out future state.<br>
+    <strong>"English" tab:</strong> rename <code>sec-tab</code> label from "NL Parse" → "English" in <code>render_add_orders()</code> tab bar.
+  </div>
+
+  <div class="nav">
+    <button class="nav-btn ghost" onclick="go(1)">← Back</button>
+    <div class="nav-spacer"></div>
+    <button class="nav-btn primary" onclick="go(3)">Next → Load Plan Pre-Solve</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN 3 — Load Plan Pre-Solve
+     ══════════════════════════════════════════════════════ -->
+<div id="s3" class="step">
+  <div class="step-label">Screen 3 of 6 · Part A — Streamlit App</div>
+  <div class="step-title">Load Plan — Pre-Solve</div>
+  <div class="step-sub">Metrics strip. Pill mode selector. Orange solve button. Geocode note inline under button.</div>
+
+  <div style="background:#fff;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,.08);overflow:hidden;">
+    <div style="padding:16px 18px;border-bottom:1px solid #edf0f4;">
+      <div class="metrics-bar">
+        <div class="metric-card">
+          <div class="metric-label">Stops</div>
+          <div class="metric-value">34</div>
+          <div class="metric-unit">to deliver</div>
+        </div>
+        <div class="metric-card warn">
+          <div class="metric-label">Space Required</div>
+          <div class="metric-value">2,847</div>
+          <div class="metric-unit">sq ft</div>
+        </div>
+        <div class="metric-card ok">
+          <div class="metric-label">Fleet Capacity</div>
+          <div class="metric-value">847</div>
+          <div class="metric-unit">sq ft</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Est. Load</div>
+          <div class="metric-value">81%</div>
+          <div class="metric-unit">3 trucks</div>
+        </div>
+      </div>
+    </div>
+    <div style="padding:16px 18px 0;">
+      <div style="font-size:10px;font-weight:800;color:#666;margin-bottom:7px;text-transform:uppercase;letter-spacing:.5px;">Routing Mode</div>
+      <div class="mode-selector">
+        <div class="mode-pill active">All Orders</div>
+        <div class="mode-pill">Two-Phase (Distrib → Builder)</div>
+      </div>
+    </div>
+    <div class="solve-block" style="padding:20px 18px 20px;">
+      <button class="solve-btn">🚛 Optimize Routes</button>
+      <div class="solve-caption">
+        📍 Geocoding 34 addresses then solving — ~45 sec<br>
+        Haversine straight-line · swap OSRM in config for road distances
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>No sidebar geocode checkbox.</strong> Geocode is always-on when <code>GEOCODING_AVAILABLE</code> and <code>auto_geocode_pending</code> is set.
+    Caption shown inline under solve button. Mode pills replace <code>st.radio()</code>.
+  </div>
+
+  <div class="nav">
+    <button class="nav-btn ghost" onclick="go(2)">← Back</button>
+    <div class="nav-spacer"></div>
+    <button class="nav-btn primary" onclick="go(4)">Next → Route Cards</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN 4 — Post-Solve Route Cards (order info + drag handles)
+     ══════════════════════════════════════════════════════ -->
+<div id="s4" class="step">
+  <div class="step-label">Screen 4 of 6 · Part A — Streamlit App</div>
+  <div class="step-title">Load Plan — Route Cards</div>
+  <div class="step-sub">
+    Drag handle (⠿) replaces ↑↓ arrows — shows intent of drag-and-drop reorder.
+    Each stop shows FeneVision order numbers (from <code>fenevision_ids</code>) and truck type tag.
+    ⇄ Move button kept for cross-truck moves.
+  </div>
+
+  <!-- Card 1 -->
+  <div class="route-card" style="margin-bottom:16px;">
+    <div class="route-card-header">
+      <span style="font-size:15px;">🚛</span>
+      <div class="route-truck-name">26ft Straight #1 — Raymond</div>
+      <div class="lifo-badge">📦 LIFO</div>
+      <div class="util-pill util-green">72% · 150/208 sq ft</div>
+    </div>
+    <div class="util-bar-wrap"><div class="util-bar green" style="width:72%;"></div></div>
+    <div class="stop-list-header">Delivery Sequence · 4 stops · 187 mi · ~6.2 hr — drag to reorder</div>
+    <div class="stop-row" style="background:#f0f6ff;border-left:3px solid #1a7cb8;">
+      <div class="drag-handle" title="Drag to reorder">⠿</div>
+      <div class="stop-num-circle">1</div>
+      <div class="stop-info">
+        <div class="stop-name">Acme Windows Atlanta <span class="stop-truck-tag">26ft only</span></div>
+        <div class="stop-addr">142 Main St, Atlanta GA 30301</div>
+        <div class="stop-orders">Orders: W2347-A · W2347-B · W2347-C</div>
+      </div>
+      <div class="move-btn">⇄ Move</div>
+    </div>
+    <div class="stop-row">
+      <div class="drag-handle" title="Drag to reorder">⠿</div>
+      <div class="stop-num-circle">2</div>
+      <div class="stop-info">
+        <div class="stop-name">Macon Builder Supply</div>
+        <div class="stop-addr">88 Commerce Dr, Macon GA 31201</div>
+        <div class="stop-orders">Orders: W2351-A · W2351-B</div>
+      </div>
+      <div class="move-btn">⇄ Move</div>
+    </div>
+    <div class="stop-row">
+      <div class="drag-handle" title="Drag to reorder">⠿</div>
+      <div class="stop-num-circle">3</div>
+      <div class="stop-info">
+        <div class="stop-name">Carter Lumber Forsyth</div>
+        <div class="stop-addr">301 Industrial Blvd, Forsyth GA 31029</div>
+        <div class="stop-orders">Orders: W2355-A</div>
+      </div>
+      <div class="move-btn">⇄ Move</div>
+    </div>
+    <div class="stop-row">
+      <div class="drag-handle" style="opacity:.35;cursor:default;">⠿</div>
+      <div class="stop-num-circle" style="background:#aaa;">4</div>
+      <div class="stop-info" style="opacity:.5;">
+        <div class="stop-name">+ 1 more stop…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Card 2: amber -->
+  <div class="route-card">
+    <div class="route-card-header">
+      <span style="font-size:15px;">🚚</span>
+      <div class="route-truck-name">53ft Trailer #1 — Kristin</div>
+      <div class="lifo-badge">📦 LIFO</div>
+      <div class="util-pill util-amber">88% · 379/431 sq ft</div>
+    </div>
+    <div class="util-bar-wrap"><div class="util-bar amber" style="width:88%;"></div></div>
+    <div class="stop-list-header">Delivery Sequence · 9 stops · 312 mi · ~8.8 hr — drag to reorder</div>
+    <div class="stop-row">
+      <div class="drag-handle">⠿</div>
+      <div class="stop-num-circle" style="background:#d97706;">1</div>
+      <div class="stop-info">
+        <div class="stop-name">Savannah Glass Co</div>
+        <div class="stop-addr">200 River St, Savannah GA 31401</div>
+        <div class="stop-orders">Orders: W2360-A · W2360-B · W2360-C · W2360-D</div>
+      </div>
+      <div class="move-btn">⇄ Move</div>
+    </div>
+    <div class="stop-row" style="opacity:.5;">
+      <div style="font-size:11px;color:#aaa;padding:4px 0;">+ 8 more stops…</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Drag handle ⠿:</strong> Visual indicator only in this mockup — implementation uses <code>st.data_editor</code> or injected JS drag events on stop rows. Fallback: keep ↑↓ buttons as hidden backup in CSS, show drag handle via <code>st.markdown()</code>.<br>
+    <strong>FeneVision order numbers:</strong> Already stored in <code>order.fenevision_ids</code>. Render below address: <code>f"Orders: {stop.order.fenevision_ids}"</code> — already shown in current app, just needs better visual treatment.<br>
+    <strong>Truck type tag</strong> (26ft only): shown when <code>order.allowed_truck_types == ["straight"]</code>.
+  </div>
+
+  <div class="nav">
+    <button class="nav-btn ghost" onclick="go(3)">← Back</button>
+    <div class="nav-spacer"></div>
+    <button class="nav-btn primary" onclick="go(5)">Next → Route Sheet Design</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN 5 — Route Sheet: Current vs Target (brand-matched, order-slip style)
+     ══════════════════════════════════════════════════════ -->
+<div id="s5" class="step">
+  <div class="step-label">Screen 5 of 6 · Part B — HTML Route Sheet</div>
+  <div class="step-title">Route Sheet — Current vs Target</div>
+  <div class="step-sub">
+    Target matches Screen 1 colors + font (navy header, orange LIFO, blue circle stops).
+    Sq ft removed — shows order numbers + notes instead, like the paper slips Joseph uses now.
+    Left border on stops prints without "print backgrounds" enabled.
+  </div>
+
+  <div class="compare-grid">
+    <!-- Current -->
+    <div>
+      <span class="compare-label old">Current (cold blue, no order info)</span>
+      <div class="sheet-old">
+        <div class="sheet-old-hdr">
+          <h3>Lindsay Windows — Raymond</h3>
+          <p>2026-06-25 · 26ft Straight · 72% utilized · 4 stops</p>
+        </div>
+        <div style="padding:8px 13px;background:#fafafa;border-bottom:1px solid #eee;font-size:11px;color:#888;">
+          [QR code block]
+        </div>
+        <div class="sheet-old-stop">
+          <div class="sheet-old-num">1.</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">Acme Windows Atlanta</div>
+            <div style="font-size:11px;color:#444;margin-top:2px;">142 Main St, Atlanta GA 30301</div>
+            <div style="font-size:11px;color:#aaa;margin-top:2px;">84 sq ft</div>
+          </div>
+        </div>
+        <div class="sheet-old-stop">
+          <div class="sheet-old-num">2.</div>
+          <div>
+            <div style="font-size:13px;font-weight:700;">Macon Builder Supply</div>
+            <div style="font-size:11px;color:#444;margin-top:2px;">88 Commerce Dr, Macon GA</div>
+            <div style="font-size:11px;color:#aaa;margin-top:2px;">66 sq ft</div>
+          </div>
+        </div>
+        <div class="sheet-old-lifo">
+          <div style="font-size:10px;font-weight:700;color:#555;margin-bottom:4px;">Loading Order</div>
+          <div style="font-size:11px;color:#555;">Load 1: Stop 4 customer</div>
+          <div style="font-size:11px;color:#555;">Load 2: Stop 3 customer</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Target -->
+    <div>
+      <span class="compare-label new">Target — matches app brand, order-slip style</span>
+      <div class="sheet-new">
+        <div class="sheet-new-hdr">
+          <div class="sheet-new-hdr-l">
+            <h3>🚛 Lindsay Windows</h3>
+            <p>26ft Straight · 4 stops · 187 mi · ~6.2 hr · 2026-06-25</p>
+          </div>
+          <div class="sheet-new-hdr-r">
+            <div class="sheet-new-driver">Raymond</div>
+            <div class="sheet-new-meta">Depart 6:30 AM → Back ~12:45 PM</div>
+          </div>
+        </div>
+        <div class="sheet-new-qr">
+          <div class="qr-box">QR</div>
+          <div class="qr-actions">
+            <button class="qr-maps-btn">📍 Open in Maps</button>
+            <div class="qr-row-btns">
+              <button class="qr-share-btn">📤 Share Route</button>
+              <button class="qr-copy-btn">🔗 Copy Link</button>
+            </div>
+          </div>
+        </div>
+        <div class="sheet-new-stop">
+          <div class="sn-circle">1</div>
+          <div style="flex:1;">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <div class="sn-name">Acme Windows Atlanta</div>
+              <div style="font-size:10px;font-weight:700;color:#1a7cb8;white-space:nowrap;margin-left:8px;">~7:15 AM</div>
+            </div>
+            <div class="sn-addr">142 Main St<br>Atlanta GA 30301</div>
+            <div class="sn-orders">W2347-A · W2347-B · W2347-C</div>
+          </div>
+        </div>
+        <div class="sheet-new-stop">
+          <div class="sn-circle">2</div>
+          <div style="flex:1;">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;">
+              <div class="sn-name">Macon Builder Supply</div>
+              <div style="font-size:10px;font-weight:700;color:#1a7cb8;white-space:nowrap;margin-left:8px;">~9:10 AM</div>
+            </div>
+            <div class="sn-addr">88 Commerce Dr<br>Macon GA 31201</div>
+            <div class="sn-orders">W2351-A · W2351-B</div>
+            <div class="sn-note">⚠ Gate code 4421 — call ahead</div>
+          </div>
+        </div>
+        <div class="sheet-new-lifo">
+          <div class="sn-lifo-head">📦 Loading Order — Load #1 goes deepest in truck</div>
+          <div class="sn-lifo-row"><span class="sn-lifo-num">Load 1:</span> Stop 4 · Carter Lumber Forsyth — W2355-A</div>
+          <div class="sn-lifo-row"><span class="sn-lifo-num">Load 2:</span> Stop 3 · BFS Gainesville — W2352-A · W2352-B</div>
+          <div class="sn-lifo-row"><span class="sn-lifo-num">Load 3:</span> Stop 2 · Macon Builder Supply — W2351-A · W2351-B</div>
+          <div class="sn-lifo-row"><span class="sn-lifo-num">Load 4:</span> Stop 1 · Acme Windows Atlanta — W2347-A · W2347-B · W2347-C</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Changes in src/export_html.py:</strong><br>
+    • <code>header</code>: <code>background:#1a1a2e</code>, driver name right-aligned in <code>#F58220</code><br>
+    • <code>.stop-card</code>: add <code>border-left:3px solid #1a7cb8; padding-left:10px;</code><br>
+    • <code>.stop-num</code>: circle badge (24px, blue bg, white text)<br>
+    • Remove <code>.sqft</code> line — replace with <code>.fv-ids</code> styled as <code>font-family:monospace; background:#eef4fb;</code><br>
+    • <code>.lifo-section</code>: <code>border-left:4px solid #F58220; background:#fff8f2;</code> — include order IDs per load row<br>
+    • Font: <code>font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif</code> (matches app)<br>
+    • <strong>Time estimates:</strong> header gets <code>~6.2 hr</code> in meta line + <code>Depart 6:30 AM → Back ~12:45 PM</code> right-aligned. Per-stop ETA (e.g. <code>~7:15 AM</code>) right-aligned on customer name row. Computed from <code>route_time_hours</code> + <code>stop_time_minutes</code> cumulative sum — no new solver field needed.
+  </div>
+
+  <div class="nav">
+    <button class="nav-btn ghost" onclick="go(4)">← Back</button>
+    <div class="nav-spacer"></div>
+    <button class="nav-btn primary" onclick="go(6)">Next → Mobile Driver View</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     SCREEN 6 — Mobile Driver View (brand-matched, order info, no sqft)
+     ══════════════════════════════════════════════════════ -->
+<div id="s6" class="step">
+  <div class="step-label">Screen 6 of 6 · Part B — HTML Route Sheet</div>
+  <div class="step-title">Route Sheet — Mobile Driver View</div>
+  <div class="step-sub">
+    iPhone view of the exported HTML. Matches Screen 5 target brand (navy, orange, Segoe UI family).
+    QR above fold. Maps button 44px+. Order numbers instead of sq ft. OVERNIGHT badge for multi-day.
+  </div>
+
+  <div style="display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap;">
+    <div style="display:flex;justify-content:flex-start;">
+      <div class="phone-wrap">
+        <div class="phone-notch"></div>
+        <div class="phone-screen">
+          <div class="ph-status">
+            <span>9:41 AM</span>
+            <span>●●●● WiFi 🔋</span>
+          </div>
+          <div class="ph-hdr">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div class="ph-title">🚛 Lindsay Windows</div>
+              <div style="font-size:11px;font-weight:800;color:#F58220;">Raymond</div>
+            </div>
+            <div class="ph-meta">26ft Straight · 4 stops · 187 mi · ~6.2 hr</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:4px;">
+              <div class="ph-badge">🌙 OVERNIGHT RUN</div>
+              <div style="font-size:9px;color:rgba(255,255,255,0.5);">Depart 6:30 AM → Back ~12:45 PM</div>
+            </div>
+          </div>
+          <div class="ph-qr">
+            <div class="ph-qr-row">
+              <div class="ph-qr-box">QR</div>
+              <div class="ph-btns">
+                <button class="ph-btn-maps">📍 Open in Maps</button>
+                <button class="ph-btn-share">📤 Share Route</button>
+                <button class="ph-btn-copy">🔗 Copy Link</button>
+              </div>
+            </div>
+          </div>
+          <div class="ph-stops">
+            <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.7px;
+                        color:#aaa;margin-bottom:5px;font-family:inherit;">Delivery Stops</div>
+            <div class="ph-stop">
+              <div class="ph-num">1</div>
+              <div style="flex:1;">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;">
+                  <div class="ph-sname">Acme Windows Atlanta</div>
+                  <div style="font-size:9px;font-weight:800;color:#1a7cb8;">~7:15 AM</div>
+                </div>
+                <div class="ph-saddr">142 Main St, Atlanta GA</div>
+                <div class="ph-sorders">W2347-A · W2347-B · W2347-C</div>
+              </div>
+              <div class="ph-nav">📍</div>
+            </div>
+            <div class="ph-stop">
+              <div class="ph-num">2</div>
+              <div style="flex:1;">
+                <div style="display:flex;align-items:baseline;justify-content:space-between;">
+                  <div class="ph-sname">Macon Builder Supply</div>
+                  <div style="font-size:9px;font-weight:800;color:#1a7cb8;">~9:10 AM</div>
+                </div>
+                <div class="ph-saddr">88 Commerce Dr, Macon GA</div>
+                <div class="ph-sorders">W2351-A · W2351-B</div>
+              </div>
+              <div class="ph-nav">📍</div>
+            </div>
+          </div>
+          <div class="ph-more">+ 2 more stops below ↓</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Annotations -->
+    <div style="flex:1;min-width:240px;display:flex;flex-direction:column;gap:14px;">
+      <div style="background:#fff;border-radius:8px;border-left:3px solid #1a7cb8;padding:10px 14px;">
+        <div style="font-size:11px;font-weight:800;color:#1a7cb8;margin-bottom:3px;">Font + colors match app</div>
+        <div style="font-size:11px;color:#555;line-height:1.5;">
+          <code>-apple-system, BlinkMacSystemFont, "Segoe UI", Arial</code> in <code>_CSS</code> — same stack as Streamlit app. Navy header <code>#1a1a2e</code>, orange driver name, blue stop circles. Matches screen 5 target exactly.
+        </div>
+      </div>
+      <div style="background:#fff;border-radius:8px;border-left:3px solid #F58220;padding:10px 14px;">
+        <div style="font-size:11px;font-weight:800;color:#F58220;margin-bottom:3px;">Order numbers, not sq ft</div>
+        <div style="font-size:11px;color:#555;line-height:1.5;">
+          <code>fenevision_ids</code> shown per stop in monospace — matches paper slips Joseph uses. Remove <code>&lt;div class="sqft"&gt;</code> from <code>_truck_page_html()</code>. LIFO section also shows order IDs per load row.
+        </div>
+      </div>
+      <div style="background:#fff;border-radius:8px;border-left:3px solid #2e7d32;padding:10px 14px;">
+        <div style="font-size:11px;font-weight:800;color:#2e7d32;margin-bottom:3px;">📍 Open in Maps — 44px min</div>
+        <div style="font-size:11px;color:#555;line-height:1.5;">
+          <code>.qr-maps-btn</code> gets <code>min-height:44px; font-size:14px;</code>. Current <code>.maps-btn</code> padding ~30px — too small for thumb tap.
+        </div>
+      </div>
+      <div style="background:#fff;border-radius:8px;border-left:3px solid #9c27b0;padding:10px 14px;">
+        <div style="font-size:11px;font-weight:800;color:#9c27b0;margin-bottom:3px;">🌙 OVERNIGHT badge</div>
+        <div style="font-size:11px;color:#555;line-height:1.5;">
+          Add <code>is_overnight: bool</code> param to <code>generate_html_routes()</code>. Pass <code>True</code> when building from <code>multiday_assignments</code>. Renders amber badge in header.
+        </div>
+      </div>
+      <div style="background:#fff8e1;border-radius:8px;border-left:3px solid #f0c040;padding:10px 14px;">
+        <div style="font-size:11px;font-weight:800;color:#7a5700;margin-bottom:3px;">⚠ No sqft on mobile or print</div>
+        <div style="font-size:11px;color:#7a5700;line-height:1.5;">
+          Remove <code>.sqft</code> div from stop cards entirely. Drivers don't need it — they need customer name, address, and order numbers to match paper slips.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Files after approval:</strong><br>
+    <strong>app.py</strong> — <code>_LINDSAY_CSS</code>: sidebar white+blue border, truck rows, expander card shadows · <code>render_load_plan()</code>: mode pills, solve button, metric strip · <code>render_add_orders()</code>: two-column layout, "English" tab label, manual entry form, feed comparison<br>
+    <strong>src/export_html.py</strong> — <code>_CSS</code>: navy header, font stack, stop border-left, lifo orange, remove .sqft · <code>_truck_page_html()</code>: circle nums, order IDs per stop, driver in header, LIFO with order IDs · add <code>is_overnight</code> param
+  </div>
+
+  <div class="nav">
+    <button class="nav-btn ghost" onclick="go(5)">← Back</button>
+    <div class="nav-spacer"></div>
+    <button class="nav-btn primary" onclick="go(7)">Next → Two-Phase</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ SCREEN 7 — TWO-PHASE -->
+<div class="step" id="s7">
+  <div class="step-label">Screen 7 of 8 — Two-Phase Routing</div>
+  <div class="step-title">Two-Phase Solve Flow</div>
+  <div class="step-sub">Distribution routes locked first — builder routes fill remaining straight trucks. Prevents homebuilder stops from competing with commercial customers for trailer space.</div>
+
+  <!-- App chrome -->
+  <div class="app-topbar">
+    <div class="app-topbar-logo">L</div>
+    <div class="app-topbar-wm">Lindsay</div>
+    <div class="app-topbar-sub">Load Planner</div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-dot"></div><div class="topbar-dot"></div><div class="topbar-dot"></div>
+  </div>
+  <div class="app-frame">
+    <!-- Sidebar (collapsed hint) -->
+    <div class="sidebar" style="min-height:560px;">
+      <div class="sb-logo">
+        <div class="sb-logo-mark">L</div>
+        <div><div style="font-size:14px;font-weight:800;color:#1a1a2e;">Lindsay</div>
+             <div style="font-size:10px;color:#888;">Load Planner</div></div>
+      </div>
+      <div style="padding:10px 12px;">
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#1a7cb8;margin-bottom:8px;">Fleet</div>
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f0f4f8;">
+          <span style="font-size:16px;">🚛</span>
+          <div style="flex:1;font-size:11px;font-weight:700;color:#1a1a2e;border-left:2px solid #1a7cb8;padding-left:6px;">Truck 1 · 26ft</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f0f4f8;">
+          <span style="font-size:16px;">🚛</span>
+          <div style="flex:1;font-size:11px;font-weight:700;color:#1a1a2e;border-left:2px solid #1a7cb8;padding-left:6px;">Truck 2 · 26ft</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid #f0f4f8;">
+          <span style="font-size:16px;">🚚</span>
+          <div style="flex:1;font-size:11px;font-weight:700;color:#1a1a2e;border-left:2px solid #F58220;padding-left:6px;">Truck 3 · 53ft</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;padding:6px 0;">
+          <span style="font-size:16px;">🚚</span>
+          <div style="flex:1;font-size:11px;font-weight:700;color:#1a1a2e;border-left:2px solid #F58220;padding-left:6px;">Truck 4 · 53ft</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main area -->
+    <div style="flex:1;background:#f4f6fa;padding:14px 16px;overflow:hidden;">
+
+      <!-- Mode pills -->
+      <div style="display:flex;gap:6px;margin-bottom:14px;">
+        <div style="padding:6px 16px;border-radius:50px;font-size:12px;font-weight:700;background:#f0f4f8;color:#666;cursor:pointer;">All Orders</div>
+        <div style="padding:6px 16px;border-radius:50px;font-size:12px;font-weight:700;background:#1a7cb8;color:#fff;">Two-Phase</div>
+      </div>
+
+      <!-- Phase 1 result (locked) -->
+      <div style="margin-bottom:10px;">
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#555;margin-bottom:6px;">
+          🔒 Phase 1 — Distribution Routes <span style="color:#2e7d32;font-weight:700;">(Locked)</span>
+        </div>
+        <!-- Truck card locked -->
+        <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;opacity:.75;margin-bottom:6px;border:1.5px dashed #ccc;">
+          <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:22px;">🚚</span>
+            <div style="flex:1;font-size:13px;font-weight:800;color:#555;">Truck 3 · 53ft — Juan</div>
+            <div style="font-size:11px;font-weight:800;background:#e8f5e9;color:#2e7d32;padding:3px 10px;border-radius:8px;">68% · 210 mi</div>
+            <div style="font-size:10px;font-weight:700;background:#fff3e0;color:#e65100;padding:3px 8px;border-radius:6px;">🔒 Locked</div>
+          </div>
+          <div style="height:3px;background:#f0f2f5;">
+            <div style="width:68%;height:3px;background:#4caf50;"></div>
+          </div>
+          <div style="padding:5px 12px;font-size:11px;color:#888;">Builders First Supply · Roofers Depot · Atlanta Glass</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;opacity:.75;border:1.5px dashed #ccc;">
+          <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:22px;">🚚</span>
+            <div style="flex:1;font-size:13px;font-weight:800;color:#555;">Truck 4 · 53ft — Raymond</div>
+            <div style="font-size:11px;font-weight:800;background:#fff8e1;color:#e65100;padding:3px 10px;border-radius:8px;">87% · 180 mi</div>
+            <div style="font-size:10px;font-weight:700;background:#fff3e0;color:#e65100;padding:3px 8px;border-radius:6px;">🔒 Locked</div>
+          </div>
+          <div style="height:3px;background:#f0f2f5;">
+            <div style="width:87%;height:3px;background:#ff9800;"></div>
+          </div>
+          <div style="padding:5px 12px;font-size:11px;color:#888;">Carter Lumber · Millwork Supply · +2 more</div>
+        </div>
+      </div>
+
+      <!-- Phase 2 result -->
+      <div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#1a7cb8;margin-bottom:6px;">
+          🏠 Phase 2 — Builder Routes
+        </div>
+        <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.09);overflow:hidden;margin-bottom:6px;">
+          <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:22px;">🚛</span>
+            <div style="flex:1;font-size:13px;font-weight:800;color:#1a1a2e;">Truck 1 · 26ft — Kristin</div>
+            <div style="font-size:11px;font-weight:800;background:#e8f5e9;color:#2e7d32;padding:3px 10px;border-radius:8px;">74% · 145 mi</div>
+          </div>
+          <div style="height:3px;background:#f0f2f5;">
+            <div style="width:74%;height:3px;background:#4caf50;"></div>
+          </div>
+          <div style="padding:5px 12px;font-size:11px;color:#888;">Saddlebrook HOA · Clearwater Ridge · Maple Glen</div>
+        </div>
+        <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.09);overflow:hidden;">
+          <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:22px;">🚛</span>
+            <div style="flex:1;font-size:13px;font-weight:800;color:#1a1a2e;">Truck 2 · 26ft — (unassigned)</div>
+            <div style="font-size:11px;font-weight:800;background:#e8f5e9;color:#2e7d32;padding:3px 10px;border-radius:8px;">55% · 112 mi</div>
+          </div>
+          <div style="height:3px;background:#f0f2f5;">
+            <div style="width:55%;height:3px;background:#4caf50;"></div>
+          </div>
+          <div style="padding:5px 12px;font-size:11px;color:#888;">Highland Park · Stonegate Subdivision · +1 more</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Backend:</strong> <code>two_phase=True</code> flag in session_state.<br>
+    Phase 1: filter orders where <code>not order.allowed_truck_types</code> (commercial) → <code>solve()</code> → store as <code>phase1_assignments</code> (locked).<br>
+    Phase 2: remaining orders (builders, <code>allowed_truck_types=["straight"]</code>) → <code>solve()</code> with only straight trucks → <code>phase2_assignments</code>.<br>
+    Combined display: Phase 1 section grayed+dashed+locked badge, Phase 2 normal cards. Lock prevents UI reorder of Phase 1 stops. Export includes both.<br>
+    <strong>Why two-phase:</strong> ensures trailers fill with high-volume commercial stops before builders compete. Homebuilder stops are "straight-only" regardless, so phase split also prevents solver from opening extra trailers to handle builder overflow.
+  </div>
+
+  <div class="nav">
+    <button class="nav-btn ghost" onclick="go(6)">← Back</button>
+    <div class="nav-spacer"></div>
+    <button class="nav-btn primary" onclick="go(8)">Next → Multi-Day</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ SCREEN 8 — MULTI-DAY -->
+<div class="step" id="s8">
+  <div class="step-label">Screen 8 of 8 — Multi-Day Routes</div>
+  <div class="step-title">Multi-Day Route Flow</div>
+  <div class="step-sub">Stops that exceed the 9-hr HOS cap surface as amber candidates, then re-solve with a relaxed 24-hr cap as separate overnight routes — not just a warning banner.</div>
+
+  <!-- App chrome -->
+  <div class="app-topbar">
+    <div class="app-topbar-logo">L</div>
+    <div class="app-topbar-wm">Lindsay</div>
+    <div class="app-topbar-sub">Load Planner</div>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-dot"></div><div class="topbar-dot"></div><div class="topbar-dot"></div>
+  </div>
+  <div class="app-frame">
+    <!-- Sidebar -->
+    <div class="sidebar" style="min-height:580px;">
+      <div class="sb-logo">
+        <div class="sb-logo-mark">L</div>
+        <div><div style="font-size:14px;font-weight:800;color:#1a1a2e;">Lindsay</div>
+             <div style="font-size:10px;color:#888;">Load Planner</div></div>
+      </div>
+      <div style="padding:10px 12px;">
+        <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.8px;color:#1a7cb8;margin-bottom:8px;">Routing Config</div>
+        <div style="font-size:11px;color:#333;margin-bottom:4px;display:flex;justify-content:space-between;">
+          <span>HOS Cap (day)</span><span style="font-weight:700;color:#1a7cb8;">9 hr</span>
+        </div>
+        <div style="font-size:11px;color:#333;margin-bottom:4px;display:flex;justify-content:space-between;">
+          <span>Multi-day cap</span><span style="font-weight:700;color:#9c27b0;">24 hr</span>
+        </div>
+        <div style="font-size:11px;color:#333;display:flex;justify-content:space-between;">
+          <span>Stop time</span><span style="font-weight:700;color:#1a7cb8;">45 min</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main area -->
+    <div style="flex:1;background:#f4f6fa;padding:14px 16px;overflow:hidden;">
+
+      <!-- Normal routes (summary) -->
+      <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#1a7cb8;margin-bottom:6px;">
+        ✅ Day Routes — 3 trucks · 14 stops
+      </div>
+      <div style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:8px 12px;margin-bottom:4px;font-size:11px;color:#555;">
+        Truck 1 · 26ft — Kristin &nbsp;·&nbsp; 6 stops &nbsp;·&nbsp; 74% &nbsp;·&nbsp; 145 mi
+      </div>
+      <div style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:8px 12px;margin-bottom:4px;font-size:11px;color:#555;">
+        Truck 3 · 53ft — Juan &nbsp;·&nbsp; 5 stops &nbsp;·&nbsp; 68% &nbsp;·&nbsp; 210 mi
+      </div>
+      <div style="background:#fff;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.07);padding:8px 12px;margin-bottom:14px;font-size:11px;color:#555;">
+        Truck 4 · 53ft — Raymond &nbsp;·&nbsp; 3 stops &nbsp;·&nbsp; 44% &nbsp;·&nbsp; 98 mi
+      </div>
+
+      <!-- Multi-day section -->
+      <div style="background:#fff8e1;border:1.5px solid #f0c040;border-radius:10px;padding:12px 14px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+          <span style="font-size:18px;">🗓</span>
+          <div style="flex:1;font-size:12px;font-weight:800;color:#7a5700;">Multi-Day Candidates — 2 stops exceed 9-hr cap</div>
+          <button style="background:#F58220;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:11px;font-weight:800;cursor:pointer;">Solve Overnight →</button>
+        </div>
+        <div style="font-size:11px;color:#7a5700;margin-bottom:4px;">• BFS Hillsborough NC — ~12 hr round-trip</div>
+        <div style="font-size:11px;color:#7a5700;">• Carter Lumber Columbia SC — ~10.5 hr round-trip</div>
+      </div>
+
+      <!-- Overnight route result -->
+      <div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#9c27b0;margin-bottom:6px;">
+          🌙 Overnight Routes — 1 truck · 2 stops
+        </div>
+        <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.09);overflow:hidden;border-left:3px solid #9c27b0;">
+          <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;">
+            <span style="font-size:22px;">🚚</span>
+            <div style="flex:1;">
+              <div style="font-size:13px;font-weight:800;color:#1a1a2e;">Truck 2 · 53ft — (unassigned)</div>
+              <div style="font-size:10px;color:#9c27b0;font-weight:700;">🌙 OVERNIGHT · Day 1 depart 6:30 AM → stay → Day 2 ~2:00 PM return</div>
+            </div>
+            <div style="font-size:11px;font-weight:800;background:#f3e5f5;color:#7b1fa2;padding:3px 10px;border-radius:8px;">91% · 340 mi</div>
+          </div>
+          <div style="height:3px;background:#f0f2f5;">
+            <div style="width:91%;height:3px;background:#9c27b0;"></div>
+          </div>
+          <div style="padding:5px 12px;font-size:11px;color:#888;">BFS Hillsborough NC · Carter Lumber Columbia SC</div>
+        </div>
+      </div>
+
+      <!-- Export bar -->
+      <div style="margin-top:12px;display:flex;gap:8px;">
+        <button style="flex:1;background:#1a1a2e;color:#fff;border:none;border-radius:8px;padding:9px 0;font-size:12px;font-weight:700;cursor:pointer;">📄 Export Day Routes</button>
+        <button style="flex:1;background:#7b1fa2;color:#fff;border:none;border-radius:8px;padding:9px 0;font-size:12px;font-weight:700;cursor:pointer;">🌙 Export Overnight Sheet</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Backend:</strong><br>
+    After normal solve: <code>_classify_drop()</code> buckets amber drops as <code>MULTIDAY</code>.<br>
+    "Solve Overnight" button: re-calls <code>solve()</code> on multiday orders with <code>max_route_hours=24</code> and <code>max_route_miles=600</code>. Result stored in <code>multiday_assignments</code>.<br>
+    Overnight route cards: purple left border (<code>#9c27b0</code>) + overnight label. Normal cards unaffected.<br>
+    Export: <code>generate_html_routes(multiday_assignments, is_overnight=True)</code> → separate download. Overnight sheet gets 🌙 badge in navy header.<br>
+    <strong>Config:</strong> <code>routing.max_route_hours</code> (day) + <code>routing.multiday_max_route_hours</code> (overnight). Both editable in sidebar expander.<br>
+    <strong>Known stops:</strong> BFS Hillsborough NC and Carter Lumber Columbia SC consistently appear as multiday candidates from 6/17 data.
+  </div>
+
+  <div class="nav">
+    <button class="nav-btn ghost" onclick="go(7)">← Back</button>
+    <div class="nav-spacer"></div>
+    <div style="background:#e8f5e9;border:1.5px solid #4caf50;border-radius:8px;
+                padding:10px 18px;font-size:13px;font-weight:700;color:#2e7d32;">
+      ✅ All 8 screens approved
+    </div>
+  </div>
+</div>
+
+</div><!-- /shell -->
+<script>
+var N = 8;
+function go(n) {
+  for (var i = 1; i <= N; i++) {
+    var el = document.getElementById('s' + i);
+    if (el) el.classList.toggle('active', i === n);
+  }
+  document.querySelectorAll('.dot').forEach(function(d, i) {
+    d.classList.toggle('active', i === n - 1);
+  });
+  window.scrollTo(0, 0);
+}
+</script>
+</body>
+</html>

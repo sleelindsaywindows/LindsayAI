@@ -45,7 +45,7 @@ def _auto_width(ws):
         ws.column_dimensions[col_letter].width = min(max(max_len + 2, 10), 50)
 
 
-def _sheet_summary(wb, assignments: list, dropped: list, josephs_truck_count: int):
+def _sheet_summary(wb, assignments: list, dropped: list, manual_truck_count: int):
     ws = wb.create_sheet("Summary")
     headers = [
         "Truck Name", "Type", "Stops",
@@ -94,7 +94,7 @@ def _sheet_summary(wb, assignments: list, dropped: list, josephs_truck_count: in
         ws.cell(row=summary_row, column=8, value=round(total_cost, 2)).font = Font(bold=True)
     ws.cell(
         row=summary_row + 1, column=1,
-        value=f"Optimizer trucks used: {len(assignments)}  |  Joseph's trucks: {josephs_truck_count}"
+        value=f"Optimizer trucks used: {len(assignments)}  |  Manual plan trucks: {manual_truck_count}"
     ).font = Font(italic=True)
     if dropped:
         ws.cell(row=summary_row + 2, column=1,
@@ -189,7 +189,7 @@ def _sheet_detail(wb, assignments: list, dropped: list):
     _auto_width(ws)
 
 
-def _sheet_cost(wb, assignments: list, dropped: list, josephs_truck_count: int):
+def _sheet_cost(wb, assignments: list, dropped: list, manual_truck_count: int):
     ws = wb.create_sheet("Cost Comparison")
     _header_row(ws, ["Metric", "Optimizer", "Current Process"], 1)
 
@@ -204,16 +204,16 @@ def _sheet_cost(wb, assignments: list, dropped: list, josephs_truck_count: int):
 
     has_miles = total_miles > 0
     rows = [
-        ("Trucks Used", len(assignments), str(josephs_truck_count)),
+        ("Trucks Used", len(assignments), str(manual_truck_count)),
         ("Total Est. Miles", round(total_miles, 1) if has_miles else "unknown", "unknown"),
         ("Total Est. Cost ($)", round(total_cost, 2) if has_miles else "unknown", "unknown"),
         ("Avg Utilization %", avg_util, "unknown"),
         ("Dropped Orders", len(dropped), "unknown"),
     ]
-    for r, (metric, opt_val, joseph_val) in enumerate(rows, 2):
+    for r, (metric, opt_val, manual_val) in enumerate(rows, 2):
         ws.cell(row=r, column=1, value=metric).border = _BORDER
         ws.cell(row=r, column=2, value=opt_val).border = _BORDER
-        ws.cell(row=r, column=3, value=joseph_val).border = _BORDER
+        ws.cell(row=r, column=3, value=manual_val).border = _BORDER
 
     note_row = len(rows) + 3
     ws.cell(
@@ -273,7 +273,7 @@ def generate_report(
     dropped: list,
     orders: list,
     output_path: str = "lindsay_analysis.xlsx",
-    josephs_truck_count: int = 13,
+    manual_truck_count: int = 13,
 ) -> str:
     """
     Generate Excel workbook with 4 sheets:
@@ -283,15 +283,15 @@ def generate_report(
       4. Constraint Audit — homebuilder truck-type constraint PASS/FAIL per stop
 
     Returns output_path. Prints warning to stderr if any constraint FAILs.
-    NOTE: josephs_truck_count defaults to 13 for the 6/17 historical run.
+    NOTE: manual_truck_count defaults to 13 for the 6/17 historical run.
           Update once more than one week of data is available for a real average.
     """
     wb = openpyxl.Workbook()
     del wb["Sheet"]  # remove default empty sheet
 
-    _sheet_summary(wb, assignments, dropped, josephs_truck_count)
+    _sheet_summary(wb, assignments, dropped, manual_truck_count)
     _sheet_detail(wb, assignments, dropped)
-    _sheet_cost(wb, assignments, dropped, josephs_truck_count)
+    _sheet_cost(wb, assignments, dropped, manual_truck_count)
     fail_count = _sheet_audit(wb, assignments)
 
     if fail_count:

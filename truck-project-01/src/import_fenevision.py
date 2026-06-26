@@ -173,7 +173,7 @@ def import_fenevision_xlsx(
             address=address,
             capacity_units=round(sqft, 3),
             priority=0,
-            notes=str(row["RouteName"]),
+            route_name=str(row["RouteName"]).strip(),
             allowed_truck_types=allowed,
             max_window_width_inches=max_width_inches,
             fenevision_ids=_fv_ids,
@@ -181,6 +181,60 @@ def import_fenevision_xlsx(
         ))
 
     return orders, skipped, excluded_route_names
+
+
+def parse_route_truck_summary(
+    xlsx_path,
+    sheet_name: str = "Route Truck Summary",
+    exclude_route_patterns: Optional[List[str]] = None,
+) -> List[dict]:
+    """
+    Read the Route Truck Summary sheet from a FeneVision xlsx export.
+    Returns one dict per route (supervisor's actual assignments from FeneVision).
+
+    Each dict: {route_name, truck_type_desc, truck_type, sqft_used, capacity, utilization_pct}
+    utilization_pct is 0–100 (converted from FeneVision's 0–1 PercentCapacity).
+    """
+    df = pd.read_excel(xlsx_path, sheet_name=sheet_name, header=0)
+
+    if exclude_route_patterns:
+        patterns_lower = [p.lower() for p in exclude_route_patterns]
+        mask = df["RouteName"].apply(
+            lambda name: any(p in str(name).lower() for p in patterns_lower)
+        )
+        df = df[~mask]
+
+    routes = []
+    for _, row in df.iterrows():
+        rname = row.get("RouteName")
+        if rname is None or (isinstance(rname, float) and pd.isna(rname)):
+            continue
+        truck_desc = str(row.get("TruckTypeDesc", "") or "").strip()
+        sqft_used = row.get("OrderTruckSpace")
+        capacity = row.get("TruckSpace")
+        pct = row.get("PercentCapacity")
+        try:
+            sqft_used = float(sqft_used) if sqft_used not in (None, "NULL") and str(sqft_used).lower() != "nan" else 0.0
+        except (ValueError, TypeError):
+            sqft_used = 0.0
+        try:
+            capacity = float(capacity) if capacity not in (None, "NULL") and str(capacity).lower() != "nan" else 0.0
+        except (ValueError, TypeError):
+            capacity = 0.0
+        try:
+            util = float(pct) * 100 if pct not in (None, "NULL") and str(pct).lower() != "nan" else 0.0
+        except (ValueError, TypeError):
+            util = 0.0
+
+        routes.append({
+            "route_name": str(rname).strip(),
+            "truck_type_desc": truck_desc if truck_desc not in ("NULL", "", "nan") else "—",
+            "truck_type": _fenevision_truck_type(truck_desc),
+            "sqft_used": sqft_used,
+            "capacity": capacity,
+            "utilization_pct": round(util, 1),
+        })
+    return routes
 
 
 def import_fenevision(

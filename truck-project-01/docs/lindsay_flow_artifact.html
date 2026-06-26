@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lindsay Windows Load Planner — Flow Artifact</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6fa; min-height: 100vh; }
+
+  /* ── Chrome ── */
+  .chrome-header {
+    background: #1a7cb8; color: #fff;
+    padding: 12px 24px; display: flex; align-items: center; gap: 12px;
+    border-bottom: 3px solid #F58220;
+  }
+  .chrome-header h1 { font-size: 16px; font-weight: 700; }
+  .chrome-header .step-pill {
+    margin-left: auto; background: rgba(255,255,255,0.18);
+    padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  }
+
+  /* ── Step container ── */
+  .step { display: none; }
+  .step.active { display: block; }
+
+  /* ── Tab strip mockup ── */
+  .tab-strip {
+    display: flex; background: #e4eaf4; border-bottom: 2px solid #ccd4e8;
+    padding: 0 24px;
+  }
+  .tab-btn {
+    padding: 10px 22px; font-size: 13px; font-weight: 600; color: #6b7a99;
+    border-bottom: 3px solid transparent; cursor: default; margin-bottom: -2px;
+  }
+  .tab-btn.active { color: #1a7cb8; border-bottom-color: #F58220; background: #fff; }
+
+  /* ── Content area ── */
+  .content { padding: 24px 28px; max-width: 860px; margin: 0 auto; }
+  .step-label { font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; color: #F58220; margin-bottom: 14px; }
+
+  /* ── Mockup elements ── */
+  .upload-box {
+    border: 2px dashed #1a7cb8; border-radius: 10px;
+    padding: 32px; text-align: center; background: #eef5fb; color: #1a7cb8;
+    font-size: 14px; margin-bottom: 16px;
+  }
+  .upload-box .icon { font-size: 36px; margin-bottom: 8px; }
+  .upload-box .sub { font-size: 12px; color: #6b8faa; margin-top: 6px; }
+
+  .spinner-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px;
+    background: #fff; border-radius: 8px; border: 1px solid #e0e6f0; margin-bottom: 10px; }
+  .spinner { width: 16px; height: 16px; border: 2px solid #d0daea;
+    border-top-color: #1a7cb8; border-radius: 50%;
+    animation: spin 0.9s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner-done { width: 16px; height: 16px; background: #2e7d32;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    color: #fff; font-size: 10px; flex-shrink: 0; }
+  .spinner-text { font-size: 13px; color: #333; }
+  .spinner-sub { font-size: 11px; color: #888; margin-top: 2px; }
+
+  .metrics { display: flex; gap: 12px; margin-bottom: 18px; }
+  .metric-box {
+    flex: 1; background: #fff; border: 1px solid #e0e6f0; border-radius: 8px;
+    padding: 12px 16px; text-align: center;
+  }
+  .metric-label { font-size: 10px; color: #7a8aaa; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 4px; }
+  .metric-val { font-size: 22px; font-weight: 700; color: #1a7cb8; }
+  .metric-sub { font-size: 10px; color: #aaa; margin-top: 2px; }
+
+  .radio-group { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+  .radio-opt {
+    display: flex; align-items: flex-start; gap: 10px; padding: 12px 16px;
+    background: #fff; border: 2px solid #e0e6f0; border-radius: 8px; cursor: default;
+  }
+  .radio-opt.selected { border-color: #1a7cb8; background: #eef5fb; }
+  .radio-dot {
+    width: 16px; height: 16px; border-radius: 50%; border: 2px solid #bbb;
+    flex-shrink: 0; margin-top: 1px;
+  }
+  .radio-dot.filled { background: #1a7cb8; border-color: #1a7cb8; }
+  .radio-label { font-size: 13px; font-weight: 600; color: #1a1a2e; }
+  .radio-sub { font-size: 11px; color: #7a8aaa; margin-top: 2px; }
+
+  .anim-box {
+    background: #1a1a2e; border-radius: 10px; padding: 20px 24px;
+    text-align: center; color: #fff; margin-bottom: 16px;
+  }
+  .anim-title { font-size: 15px; font-weight: 700; color: #F58220; margin-bottom: 6px; }
+  .anim-sub { font-size: 12px; color: #aad4f5; }
+
+  .truck-card {
+    background: #fff; border: 1px solid #e0e6f0; border-radius: 8px;
+    margin-bottom: 10px; overflow: hidden;
+  }
+  .truck-card-header {
+    background: #1a7cb8; color: #fff; padding: 8px 14px;
+    display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 700;
+  }
+  .util-chip {
+    margin-left: auto; background: rgba(255,255,255,0.2);
+    padding: 2px 10px; border-radius: 12px; font-size: 11px;
+  }
+  .truck-stop {
+    padding: 7px 14px; font-size: 12px; border-bottom: 1px solid #f0f4fa;
+    display: flex; align-items: center; gap: 8px; color: #333;
+  }
+  .stop-num {
+    width: 20px; height: 20px; background: #F58220; color: #fff;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; flex-shrink: 0;
+  }
+  .stop-arrows { margin-left: auto; display: flex; gap: 4px; }
+  .arr-btn {
+    width: 22px; height: 22px; border: 1px solid #d0d8e8; border-radius: 4px;
+    background: #f4f6fa; display: flex; align-items: center; justify-content: center;
+    font-size: 11px; cursor: default; color: #555;
+  }
+  .check-box {
+    width: 16px; height: 16px; border: 2px solid #d0d8e8; border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .check-box.checked { background: #2e7d32; border-color: #2e7d32; }
+
+  .util-bar-wrap { height: 6px; background: #e8edf5; border-radius: 3px; margin: 8px 14px; }
+  .util-bar { height: 100%; border-radius: 3px; background: #F58220; }
+
+  .drop-banner {
+    border-radius: 8px; padding: 12px 16px; margin-bottom: 10px;
+  }
+  .drop-amber { background: #fff8e1; border: 1.5px solid #f0c040; }
+  .drop-red { background: #fdeaea; border: 1.5px solid #e57373; }
+  .drop-title { font-size: 13px; font-weight: 700; margin-bottom: 4px; }
+  .drop-amber .drop-title { color: #7a5700; }
+  .drop-red .drop-title { color: #b71c1c; }
+  .drop-items { font-size: 11px; color: #555; line-height: 1.8; }
+
+  .action-bar {
+    display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap;
+  }
+  .btn-primary {
+    background: #F58220; color: #fff; border: none; border-radius: 6px;
+    padding: 9px 20px; font-size: 13px; font-weight: 700; cursor: default;
+  }
+  .btn-secondary {
+    background: #fff; color: #1a7cb8; border: 2px solid #1a7cb8; border-radius: 6px;
+    padding: 8px 18px; font-size: 13px; font-weight: 600; cursor: default;
+  }
+
+  .analysis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .analysis-table { background: #fff; border-radius: 8px; border: 1px solid #e0e6f0; overflow: hidden; }
+  .analysis-table th {
+    background: #1a7cb8; color: #fff; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; padding: 8px 12px; text-align: left; letter-spacing: 0.4px;
+  }
+  .analysis-table td { font-size: 12px; padding: 7px 12px; border-bottom: 1px solid #f0f4fa; }
+  .analysis-table tr:last-child td { border-bottom: none; }
+  .win { color: #2e7d32; font-weight: 700; }
+  .lose { color: #b71c1c; font-weight: 700; }
+
+  /* ── Geocode UX decision panel ── */
+  .decision-split { display: flex; gap: 16px; margin-bottom: 16px; }
+  .decision-opt {
+    flex: 1; border: 2px solid #e0e6f0; border-radius: 10px; padding: 14px;
+    background: #fff;
+  }
+  .decision-opt.preferred { border-color: #F58220; background: #fff8f2; }
+  .decision-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px;
+    padding: 2px 8px; border-radius: 10px; display: inline-block; margin-bottom: 8px;
+  }
+  .badge-orange { background: #F58220; color: #fff; }
+  .badge-gray { background: #8a98b0; color: #fff; }
+  .decision-title { font-size: 13px; font-weight: 700; color: #1a1a2e; margin-bottom: 6px; }
+  .decision-body { font-size: 12px; color: #555; line-height: 1.6; }
+  .decision-pros { margin-top: 8px; font-size: 11px; color: #2e7d32; }
+  .decision-cons { margin-top: 4px; font-size: 11px; color: #b71c1c; }
+
+  /* ── Backend note ── */
+  .backend-note {
+    background: #eef5fb; border-left: 3px solid #1a7cb8;
+    padding: 10px 14px; border-radius: 0 6px 6px 0; margin-top: 16px;
+  }
+  .backend-note strong { color: #1a7cb8; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.5px; display: block; margin-bottom: 5px; }
+  .backend-note code { font-family: 'Courier New', monospace; font-size: 11px;
+    background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 3px; }
+  .backend-note ul { padding-left: 14px; font-size: 12px; color: #2a3a5a; line-height: 1.8; }
+
+  /* ── Nav ── */
+  .nav-bar {
+    display: flex; align-items: center; padding: 14px 28px;
+    border-top: 1px solid #e0e6f0; background: #fff; gap: 10px;
+    position: sticky; bottom: 0;
+  }
+  .nav-back {
+    background: #fff; color: #555; border: 1.5px solid #d0d8e8;
+    border-radius: 6px; padding: 8px 18px; font-size: 13px; font-weight: 600;
+    cursor: pointer;
+  }
+  .nav-next {
+    background: #1a7cb8; color: #fff; border: none;
+    border-radius: 6px; padding: 9px 22px; font-size: 13px; font-weight: 700;
+    cursor: pointer; margin-left: auto;
+  }
+  .nav-next:hover { background: #155f8e; }
+  .nav-back:hover { background: #f4f6fa; }
+  .progress-dots { display: flex; gap: 6px; margin: 0 auto; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #d0d8e8; }
+  .dot.active { background: #F58220; }
+</style>
+</head>
+<body>
+
+<!-- ══ STEP 1: UPLOAD ══ -->
+<div id="s1" class="step active">
+  <div class="chrome-header">
+    <span style="font-size:20px;">🪟</span>
+    <h1>Lindsay Windows — Load Planner</h1>
+    <span class="step-pill">Step 1 of 6 — Upload</span>
+  </div>
+  <div class="tab-strip">
+    <div class="tab-btn active">Add Orders</div>
+    <div class="tab-btn">Load Plan</div>
+    <div class="tab-btn">Analysis</div>
+  </div>
+  <div class="content">
+    <div class="step-label">Step 1 of 6 — FeneVision Upload</div>
+
+    <div class="upload-box">
+      <div class="icon">📄</div>
+      <strong>Drop GA Trucks xlsx here</strong>
+      <div class="sub">or click to browse · accepts .xlsx only</div>
+    </div>
+
+    <div class="spinner-row">
+      <div class="spinner"></div>
+      <div>
+        <div class="spinner-text">Reading FeneVision file…</div>
+        <div class="spinner-sub">Parsing "Orders by Route" + "Route Truck Summary" sheets</div>
+      </div>
+    </div>
+    <div class="spinner-row" style="opacity:0.5;">
+      <div class="spinner-done">✓</div>
+      <div>
+        <div class="spinner-text">34 stops loaded · 1 interplant route excluded (MO)</div>
+        <div class="spinner-sub">TruckTypeDesc → allowed_truck_types mapped per stop</div>
+      </div>
+    </div>
+
+    <div class="backend-note">
+      <strong>Backend state after this step</strong>
+      <ul>
+        <li><code>import_fenevision_xlsx()</code> → <code>st.session_state.orders</code> (34 Order objects)</li>
+        <li><code>parse_route_truck_summary()</code> → <code>st.session_state.supervisor_routes</code></li>
+        <li><code>GA-26' ST</code> → <code>allowed_truck_types=["straight"]</code> · <code>53' Trailer</code> → <code>None</code></li>
+        <li>MO interplant route excluded via <code>exclude_route_patterns=[" MO "]</code></li>
+        <li><code>auto_run_pending = True</code> · <code>_jump_plan = True</code></li>
+      </ul>
+    </div>
+  </div>
+  <div class="nav-bar">
+    <div class="progress-dots">
+      <div class="dot active"></div><div class="dot"></div><div class="dot"></div>
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+    <button class="nav-next" onclick="go(2)">Next → Geocoding</button>
+  </div>
+</div>
+
+<!-- ══ STEP 2: GEOCODING UX DECISION ══ -->
+<div id="s2" class="step">
+  <div class="chrome-header">
+    <span style="font-size:20px;">🪟</span>
+    <h1>Lindsay Windows — Load Planner</h1>
+    <span class="step-pill">Step 2 of 6 — Geocoding</span>
+  </div>
+  <div class="tab-strip">
+    <div class="tab-btn active">Add Orders</div>
+    <div class="tab-btn">Load Plan</div>
+    <div class="tab-btn">Analysis</div>
+  </div>
+  <div class="content">
+    <div class="step-label">Step 2 of 6 — Auto-Geocoding (UX Decision Point)</div>
+    <p style="font-size:13px;color:#555;margin-bottom:14px;">Two options for where geocoding lives in the flow. Pick one before implementing.</p>
+
+    <div class="decision-split">
+      <!-- Option A: geocode on Add Orders tab -->
+      <div class="decision-opt">
+        <span class="decision-badge badge-gray">Option A — Current</span>
+        <div class="decision-title">Geocode on Add Orders tab<br>before jumping to Load Plan</div>
+        <div class="decision-body">
+          Spinner shows on Add Orders tab. After geocoding completes, page jumps to Load Plan and auto-solve fires.
+        </div>
+        <div class="decision-pros">✓ Coordinates ready before any solve<br>✓ Simpler code (no extra flag)</div>
+        <div class="decision-cons">✗ User watches spinner on wrong tab<br>✗ Breaks the mental model ("I uploaded, why is Add Orders still loading?")</div>
+      </div>
+
+      <!-- Option B: geocode on Load Plan tab -->
+      <div class="decision-opt preferred">
+        <span class="decision-badge badge-orange">Option B — Recommended</span>
+        <div class="decision-title">Jump to Load Plan first,<br>geocode + solve there together</div>
+        <div class="decision-body">
+          Jump immediately after upload. Load Plan shows a unified animation: "Geocoding 34 addresses → Optimizing routes…" One place, one spinner, one result.
+        </div>
+        <div class="decision-pros">✓ All loading work in one place<br>✓ User sees progress toward their goal<br>✓ Natural: "I uploaded → now it's planning"</div>
+        <div class="decision-cons">✗ Slightly more complex: geocode + solve must be chained in Load Plan render</div>
+      </div>
+    </div>
+
+    <!-- Geocoding progress mockup (Option B) -->
+    <div style="background:#fff;border:1px solid #e0e6f0;border-radius:8px;padding:14px;margin-bottom:4px;">
+      <div style="font-size:12px;font-weight:700;color:#1a7cb8;margin-bottom:10px;">Load Plan — unified progress (Option B)</div>
+      <div class="spinner-row"><div class="spinner"></div><div><div class="spinner-text">Geocoding addresses… (12 / 34)</div><div class="spinner-sub">1234 Peachtree St NW, Atlanta GA · lat: 33.7812, lon: -84.3832</div></div></div>
+      <div class="spinner-row" style="opacity:0.4;"><div class="spinner-done" style="background:#aaa;">⋯</div><div><div class="spinner-text" style="color:#aaa;">Optimizing routes — waiting for geocoding…</div></div></div>
+    </div>
+
+    <div class="backend-note">
+      <strong>Backend state after this step</strong>
+      <ul>
+        <li>Each <code>Order.lat</code> / <code>Order.lon</code> set via <code>geocode_address(order.address)</code></li>
+        <li><code>st.session_state._depot_coords</code> set from geocoded depot address</li>
+        <li>Orders already having <code>lat is not None</code> are skipped (idempotent)</li>
+        <li>Option B: <code>auto_geocode_pending = True</code> flag consumed in <code>render_load_plan()</code></li>
+      </ul>
+    </div>
+  </div>
+  <div class="nav-bar">
+    <button class="nav-back" onclick="go(1)">← Back</button>
+    <div class="progress-dots">
+      <div class="dot"></div><div class="dot active"></div><div class="dot"></div>
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+    <button class="nav-next" onclick="go(3)">Next → Load Plan</button>
+  </div>
+</div>
+
+<!-- ══ STEP 3: LOAD PLAN — MODE SELECT ══ -->
+<div id="s3" class="step">
+  <div class="chrome-header">
+    <span style="font-size:20px;">🪟</span>
+    <h1>Lindsay Windows — Load Planner</h1>
+    <span class="step-pill">Step 3 of 6 — Choose Mode</span>
+  </div>
+  <div class="tab-strip">
+    <div class="tab-btn">Add Orders</div>
+    <div class="tab-btn active">Load Plan</div>
+    <div class="tab-btn">Analysis</div>
+  </div>
+  <div class="content">
+    <div class="step-label">Step 3 of 6 — Load Plan: Mode Selection</div>
+
+    <div class="metrics">
+      <div class="metric-box"><div class="metric-label">Stops</div><div class="metric-val">34</div><div class="metric-sub">to deliver</div></div>
+      <div class="metric-box"><div class="metric-label">Space Required</div><div class="metric-val">2,847</div><div class="metric-sub">sq ft</div></div>
+      <div class="metric-box"><div class="metric-label">Fleet Capacity</div><div class="metric-val">3,622</div><div class="metric-sub">sq ft (8 trucks)</div></div>
+      <div class="metric-box"><div class="metric-label">Fleet Load</div><div class="metric-val" style="color:#2e7d32;">79%</div><div class="metric-sub">within capacity</div></div>
+    </div>
+
+    <div class="radio-group">
+      <div class="radio-opt selected">
+        <div class="radio-dot filled"></div>
+        <div>
+          <div class="radio-label">All Orders</div>
+          <div class="radio-sub">Optimize all 34 stops together across all available trucks.</div>
+        </div>
+      </div>
+      <div class="radio-opt">
+        <div class="radio-dot"></div>
+        <div>
+          <div class="radio-label">Two-Phase: Distribution first, then Builders</div>
+          <div class="radio-sub">Phase 1 — lock trailer routes (lumber yards, building supply). Phase 2 — slot builder stops (straight trucks, residential) around committed routes. Matches supervisor's evening-before / 4am workflow.</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top:4px;">
+      <button class="btn-primary">🔄 Optimize All Orders</button>
+    </div>
+
+    <div class="backend-note">
+      <strong>Backend state after this step</strong>
+      <ul>
+        <li>All Orders: <code>solve(orders, trucks, depot_coords, ...)</code> called directly</li>
+        <li>Two-Phase: distribution = orders where <code>allowed_truck_types != ["straight"]</code>; builders = rest</li>
+        <li><code>routing_phase</code>: <code>None</code> → <code>"distribution_done"</code> → complete</li>
+        <li>Phase 1 trucks locked: <code>st.session_state.phase1_assignments</code> frozen before Phase 2 runs</li>
+      </ul>
+    </div>
+  </div>
+  <div class="nav-bar">
+    <button class="nav-back" onclick="go(2)">← Back</button>
+    <div class="progress-dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot active"></div>
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+    <button class="nav-next" onclick="go(4)">Next → Results</button>
+  </div>
+</div>
+
+<!-- ══ STEP 4: SOLVE + RESULTS ══ -->
+<div id="s4" class="step">
+  <div class="chrome-header">
+    <span style="font-size:20px;">🪟</span>
+    <h1>Lindsay Windows — Load Planner</h1>
+    <span class="step-pill">Step 4 of 6 — Results</span>
+  </div>
+  <div class="tab-strip">
+    <div class="tab-btn">Add Orders</div>
+    <div class="tab-btn active">Load Plan</div>
+    <div class="tab-btn">Analysis</div>
+  </div>
+  <div class="content">
+    <div class="step-label">Step 4 of 6 — Solve Results + Dropped Order Triage</div>
+
+    <div class="anim-box" style="margin-bottom:14px;">
+      <div class="anim-title">✓ Optimization Complete</div>
+      <div class="anim-sub">5 trucks assigned · 28 stops · 1,063 mi · 8.4 hr avg · solver ran 15s</div>
+    </div>
+
+    <!-- Route cards -->
+    <div class="truck-card">
+      <div class="truck-card-header">🚛 26ft Straight #1 <span style="font-size:11px;font-weight:400;margin-left:6px;">· 7 stops · 94 mi</span><span class="util-chip">82%</span></div>
+      <div class="truck-stop"><div class="stop-num">1</div>Carter Lumber — Woodstock GA<div class="stop-arrows"><div class="arr-btn">↑</div><div class="arr-btn">↓</div></div></div>
+      <div class="truck-stop"><div class="stop-num">2</div>Valor Communities — Canton GA<div class="stop-arrows"><div class="arr-btn">↑</div><div class="arr-btn">↓</div></div></div>
+      <div class="truck-stop" style="color:#aaa;font-style:italic;font-size:11px;"><div class="stop-num" style="background:#ccc;">+5</div>5 more stops…</div>
+      <div class="util-bar-wrap"><div class="util-bar" style="width:82%;"></div></div>
+    </div>
+    <div class="truck-card">
+      <div class="truck-card-header" style="background:#546e7a;">🚚 53ft Trailer #1 <span style="font-size:11px;font-weight:400;margin-left:6px;">· 5 stops · 187 mi</span><span class="util-chip">71%</span></div>
+      <div class="truck-stop"><div class="stop-num" style="background:#546e7a;">1</div>84 Lumber — Kennesaw GA<div class="stop-arrows"><div class="arr-btn">↑</div><div class="arr-btn">↓</div></div></div>
+      <div class="truck-stop" style="color:#aaa;font-style:italic;font-size:11px;"><div class="stop-num" style="background:#ccc;">+4</div>4 more stops…</div>
+      <div class="util-bar-wrap"><div class="util-bar" style="width:71%;background:#546e7a;"></div></div>
+    </div>
+
+    <!-- Drop buckets -->
+    <div style="margin-top:16px;margin-bottom:4px;font-size:12px;font-weight:700;color:#444;">⚠ 6 orders could not be assigned as same-day routes:</div>
+
+    <div class="drop-banner drop-amber">
+      <div class="drop-title">🕐 Multi-Day Routes — 4 stops (geographic distance, not capacity)</div>
+      <div class="drop-items">
+        R315103-S01 · BFS Hillsborough NC · ~4.5 hr one-way<br>
+        R315103-S02 · BFS Hillsborough NC · ~4.5 hr one-way<br>
+        R315107-S01 · Carter Lumber Columbia SC · ~2.1 hr one-way<br>
+        R315107-S02 · Carter Lumber Columbia SC · ~2.1 hr one-way
+      </div>
+      <div style="font-size:11px;color:#7a5700;margin-top:6px;">→ These fit on a truck — they just exceed the 9-hr same-day cap. Schedule as overnight or multi-day runs.</div>
+    </div>
+
+    <div class="drop-banner drop-red">
+      <div class="drop-title">❌ True Drops — 2 stops (capacity or constraint conflict)</div>
+      <div class="drop-items">
+        R315104-S01 · 312 sq ft · no straight truck has room · trailer required but customer is homebuilder<br>
+        R315108-S01 · 198 sq ft · all trucks at fill cap
+      </div>
+      <div style="font-size:11px;color:#b71c1c;margin-top:6px;">→ Add a truck, relax fill cap, or re-schedule.</div>
+    </div>
+
+    <div class="backend-note">
+      <strong>Backend state after this step</strong>
+      <ul>
+        <li><code>solve()</code> returns <code>(assignments, dropped)</code> — dropped has 6 orders</li>
+        <li><strong>Multi-day detection</strong> (not yet implemented): post-solve, re-run <code>check_route_cap()</code> on each dropped order solo — if it fails ONLY due to time (not capacity), tag as <code>multi_day_candidate=True</code></li>
+        <li>True drops: failed capacity check OR homebuilder truck-type conflict with no viable truck</li>
+        <li><code>st.session_state.assignments</code> = 5 TruckAssignment objects</li>
+        <li><code>st.session_state.dropped</code> = 6 Order objects (needs triage split)</li>
+      </ul>
+    </div>
+  </div>
+  <div class="nav-bar">
+    <button class="nav-back" onclick="go(3)">← Back</button>
+    <div class="progress-dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      <div class="dot active"></div><div class="dot"></div><div class="dot"></div>
+    </div>
+    <button class="nav-next" onclick="go(5)">Next → Stop Reordering</button>
+  </div>
+</div>
+
+<!-- ══ STEP 5: REORDER + CONFIRM ══ -->
+<div id="s5" class="step">
+  <div class="chrome-header">
+    <span style="font-size:20px;">🪟</span>
+    <h1>Lindsay Windows — Load Planner</h1>
+    <span class="step-pill">Step 5 of 6 — Reordering &amp; Confirm</span>
+  </div>
+  <div class="tab-strip">
+    <div class="tab-btn">Add Orders</div>
+    <div class="tab-btn active">Load Plan</div>
+    <div class="tab-btn">Analysis</div>
+  </div>
+  <div class="content">
+    <div class="step-label">Step 5 of 6 — Manual Reorder, Driver Confirmation &amp; Export</div>
+
+    <div class="truck-card">
+      <div class="truck-card-header">🚛 26ft Straight #1 · Kristin<span class="util-chip">82%</span></div>
+      <div class="truck-stop">
+        <div class="check-box checked"></div>
+        <div class="stop-num">1</div>
+        Carter Lumber — Woodstock GA
+        <div class="stop-arrows"><div class="arr-btn">↑</div><div class="arr-btn">↓</div><div class="arr-btn" style="font-size:10px;padding:2px;">⇄</div></div>
+      </div>
+      <div class="truck-stop">
+        <div class="check-box"></div>
+        <div class="stop-num">2</div>
+        Valor Communities — Canton GA
+        <div class="stop-arrows"><div class="arr-btn">↑</div><div class="arr-btn">↓</div><div class="arr-btn" style="font-size:10px;padding:2px;">⇄</div></div>
+      </div>
+      <div class="truck-stop">
+        <div class="check-box"></div>
+        <div class="stop-num">3</div>
+        Smith Family Builders — Cumming GA
+        <div class="stop-arrows"><div class="arr-btn">↑</div><div class="arr-btn">↓</div><div class="arr-btn" style="font-size:10px;padding:2px;">⇄</div></div>
+      </div>
+      <div class="util-bar-wrap"><div class="util-bar" style="width:82%;"></div></div>
+    </div>
+
+    <div style="font-size:11px;color:#888;margin-bottom:12px;">
+      ↑↓ reorder stops within this truck &nbsp;·&nbsp; ⇄ move stop to a different truck &nbsp;·&nbsp; ☑ confirm stop is ready to load
+    </div>
+
+    <div class="action-bar">
+      <button class="btn-primary">⬇ Export Route Sheets</button>
+      <button class="btn-secondary">💾 Save Plan (.json)</button>
+      <button class="btn-secondary">📋 Load Plan (.json)</button>
+    </div>
+
+    <div class="backend-note">
+      <strong>Backend state after this step</strong>
+      <ul>
+        <li>Stop reorder: mutates <code>assignment.stops[]</code> order in <code>st.session_state.assignments</code></li>
+        <li>⇄ move: removes <code>RouteStop</code> from one assignment, appends to another</li>
+        <li>☑ confirm: sets <code>RouteStop.confirmed = True</code> (field not yet on model — needs adding)</li>
+        <li><code>export_html_routes()</code> → downloadable HTML per truck with QR codes + OrderNumbers</li>
+        <li><code>serialize_plan(orders, assignments, dropped, supervisor_routes)</code> → <code>.json</code> download</li>
+        <li>Load: <code>deserialize_plan(bytes)</code> → full session restore</li>
+      </ul>
+    </div>
+  </div>
+  <div class="nav-bar">
+    <button class="nav-back" onclick="go(4)">← Back</button>
+    <div class="progress-dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      <div class="dot"></div><div class="dot active"></div><div class="dot"></div>
+    </div>
+    <button class="nav-next" onclick="go(6)">Next → Analysis</button>
+  </div>
+</div>
+
+<!-- ══ STEP 6: ANALYSIS ══ -->
+<div id="s6" class="step">
+  <div class="chrome-header">
+    <span style="font-size:20px;">🪟</span>
+    <h1>Lindsay Windows — Load Planner</h1>
+    <span class="step-pill">Step 6 of 6 — Analysis</span>
+  </div>
+  <div class="tab-strip">
+    <div class="tab-btn">Add Orders</div>
+    <div class="tab-btn">Load Plan</div>
+    <div class="tab-btn active">Analysis</div>
+  </div>
+  <div class="content">
+    <div class="step-label">Step 6 of 6 — Analysis &amp; Supervisor Comparison</div>
+
+    <div class="analysis-grid">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#1a7cb8;margin-bottom:8px;">Optimizer Plan</div>
+        <table class="analysis-table" style="width:100%;border-collapse:collapse;">
+          <tr><th>Truck</th><th>Stops</th><th>Miles</th><th>Util</th></tr>
+          <tr><td>26ft #1</td><td>7</td><td>94</td><td class="win">82%</td></tr>
+          <tr><td>26ft #2</td><td>5</td><td>71</td><td>67%</td></tr>
+          <tr><td>26ft #3</td><td>6</td><td>88</td><td>74%</td></tr>
+          <tr><td>53ft #1</td><td>5</td><td>187</td><td>71%</td></tr>
+          <tr><td>53ft #2</td><td>5</td><td>213</td><td>68%</td></tr>
+          <tr><td colspan="4" style="font-size:11px;color:#888;padding-top:8px;">5 trucks · 28 stops · 1,063 mi · 73% avg util</td></tr>
+        </table>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:#F58220;margin-bottom:8px;">Supervisor Plan (from FeneVision)</div>
+        <table class="analysis-table" style="width:100%;border-collapse:collapse;">
+          <tr><th style="background:#F58220;">Route</th><th style="background:#F58220;">Stops</th><th style="background:#F58220;">Miles</th><th style="background:#F58220;">Util</th></tr>
+          <tr><td>Kristin</td><td>8</td><td>112</td><td class="lose">91%</td></tr>
+          <tr><td>Juan</td><td>6</td><td>95</td><td>78%</td></tr>
+          <tr><td>Raymond</td><td>7</td><td>103</td><td>85%</td></tr>
+          <tr><td>Trailer A</td><td>4</td><td>201</td><td>63%</td></tr>
+          <tr><td>Trailer B</td><td>3</td><td>195</td><td class="lose">55%</td></tr>
+          <tr><td colspan="4" style="font-size:11px;color:#888;padding-top:8px;">5 trucks · 28 stops · 1,219 mi · 74% avg util</td></tr>
+        </table>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;padding:12px 16px;background:#e8f5e9;border-radius:8px;border:1px solid #a5d6a7;">
+      <div style="font-size:12px;font-weight:700;color:#1b5e20;margin-bottom:4px;">Optimizer vs Supervisor — Key Deltas</div>
+      <div style="font-size:12px;color:#2e7d32;line-height:1.8;">
+        ✓ Same truck count (5) &nbsp;·&nbsp; <strong>−156 miles</strong> (13% reduction) &nbsp;·&nbsp;
+        Kristin route de-loaded from 91% → 82% &nbsp;·&nbsp; Trailer B improved from 55% → 68%
+      </div>
+    </div>
+
+    <div class="action-bar" style="margin-top:14px;">
+      <button class="btn-primary">⬇ Export Excel Report</button>
+    </div>
+
+    <div class="backend-note">
+      <strong>Backend state after this step</strong>
+      <ul>
+        <li><code>parse_route_truck_summary()</code> data in <code>st.session_state.supervisor_routes</code> (from upload)</li>
+        <li><code>st.session_state.assignments</code> compared row-by-row in <code>render_analysis()</code></li>
+        <li><code>generate_report(assignments, dropped, supervisor_routes)</code> → 4-sheet xlsx: Summary · Stops · Dropped · Supervisor Comparison</li>
+        <li>Delta calculations: miles saved, truck count delta, avg utilization vs supervisor</li>
+      </ul>
+    </div>
+  </div>
+  <div class="nav-bar">
+    <button class="nav-back" onclick="go(5)">← Back</button>
+    <div class="progress-dots">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      <div class="dot"></div><div class="dot"></div><div class="dot active"></div>
+    </div>
+    <span style="margin-left:auto;font-size:12px;color:#888;font-style:italic;">End of flow · iterate or approve to implement</span>
+  </div>
+</div>
+
+<script>
+  function go(n) {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+    document.getElementById('s' + n).classList.add('active');
+    window.scrollTo(0, 0);
+  }
+</script>
+</body>
+</html>

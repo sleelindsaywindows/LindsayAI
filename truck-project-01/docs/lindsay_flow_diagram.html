@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lindsay Windows Load Planner — System Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f4f6fa; color: #1a1a2e; }
+
+  .page-header {
+    background: #1a7cb8;
+    color: #fff;
+    padding: 18px 32px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 4px solid #F58220;
+  }
+  .page-header h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.3px; }
+  .page-header span { font-size: 13px; opacity: 0.85; margin-left: auto; }
+
+  .section { padding: 28px 32px; }
+  .section-title {
+    font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1.2px; color: #F58220; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-title::after {
+    content: ''; flex: 1; height: 1px; background: #F58220; opacity: 0.3;
+  }
+
+  /* ── Flow layout ──────────────────────────────────── */
+  .flow { display: flex; align-items: flex-start; gap: 0; flex-wrap: nowrap; overflow-x: auto; }
+  .flow-col { display: flex; flex-direction: column; align-items: center; min-width: 140px; }
+  .flow-col-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.8px; color: #888; margin-bottom: 10px;
+    background: #eee; padding: 3px 10px; border-radius: 20px;
+  }
+
+  /* Nodes */
+  .node {
+    border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 600;
+    text-align: center; min-width: 130px; max-width: 160px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10); line-height: 1.4;
+  }
+  .node-blue { background: #1a7cb8; color: #fff; }
+  .node-orange { background: #F58220; color: #fff; }
+  .node-light { background: #fff; color: #1a1a2e; border: 1.5px solid #d0d8e8; }
+  .node-green { background: #2e7d32; color: #fff; }
+  .node-yellow { background: #fff8e1; color: #6d4c00; border: 1.5px solid #f0c040; }
+  .node-red { background: #fdeaea; color: #b71c1c; border: 1.5px solid #e57373; }
+  .node-purple { background: #4a148c; color: #fff; }
+  .node-gray { background: #546e7a; color: #fff; }
+
+  .node sub { font-size: 10px; font-weight: 400; opacity: 0.85; display: block; margin-top: 3px; }
+
+  /* Arrows */
+  .arrow-h {
+    display: flex; align-items: center; padding-top: 24px; min-width: 28px;
+    font-size: 18px; color: #aab; flex-shrink: 0;
+  }
+  .arrow-h::before { content: '→'; }
+  .arrow-h.orange::before { color: #F58220; }
+  .arrow-h.blue::before { color: #1a7cb8; }
+
+  .arrow-v {
+    font-size: 16px; color: #aab; margin: 4px 0; line-height: 1;
+  }
+  .arrow-v::before { content: '↓'; }
+
+  /* Branch group */
+  .branch {
+    display: flex; flex-direction: column; gap: 6px; align-items: center;
+  }
+  .branch-wrapper {
+    display: flex; align-items: center; gap: 0;
+  }
+  .branch-spine {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+  }
+
+  /* Decision diamond */
+  .diamond {
+    width: 100px; height: 54px; background: #1a7cb8; color: #fff;
+    clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; text-align: center;
+    padding: 8px; line-height: 1.3;
+  }
+  .diamond.orange { background: #F58220; }
+
+  /* Phase badge */
+  .phase-badge {
+    font-size: 10px; font-weight: 700; background: #F58220;
+    color: #fff; padding: 2px 8px; border-radius: 10px; margin-bottom: 4px;
+  }
+
+  /* Tab strip */
+  .tab-strip {
+    display: flex; gap: 0; background: #e8edf5;
+    border-radius: 8px 8px 0 0; overflow: hidden; margin-bottom: 20px;
+    width: fit-content;
+  }
+  .tab {
+    padding: 9px 22px; font-size: 12px; font-weight: 700;
+    color: #555; cursor: default; border-bottom: 3px solid transparent;
+  }
+  .tab.active { background: #fff; color: #1a7cb8; border-bottom-color: #F58220; }
+
+  /* Backend pipeline */
+  .pipeline {
+    display: flex; align-items: center; gap: 0; flex-wrap: nowrap;
+    overflow-x: auto; padding-bottom: 8px;
+  }
+  .pipe-box {
+    border-radius: 8px; padding: 12px 16px; font-size: 11.5px;
+    font-weight: 600; text-align: center; min-width: 130px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10); line-height: 1.5;
+  }
+  .pipe-box code {
+    font-family: 'Courier New', monospace; font-size: 10px;
+    display: block; font-weight: 400; opacity: 0.85; margin-top: 3px;
+  }
+  .pipe-arrow {
+    font-size: 20px; color: #1a7cb8; padding: 0 4px; flex-shrink: 0;
+    padding-top: 0;
+  }
+  .constraint-list {
+    font-size: 10px; line-height: 1.6; color: #546e7a;
+    margin-top: 6px; text-align: left;
+  }
+  .constraint-list li { list-style: none; padding-left: 10px; }
+  .constraint-list li::before { content: '✓ '; color: #F58220; }
+
+  /* Legend */
+  .legend {
+    display: flex; gap: 16px; flex-wrap: wrap;
+    padding: 12px 32px; background: #fff; border-top: 1px solid #e0e6f0;
+    font-size: 11px; color: #555;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot {
+    width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0;
+  }
+
+  .divider { height: 1px; background: #e0e6f0; margin: 0 32px; }
+
+  /* Stack of small sub-nodes */
+  .sub-nodes { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+  .sub-node {
+    font-size: 10px; padding: 4px 10px; border-radius: 5px;
+    background: #fff; border: 1px solid #d0d8e8; text-align: center;
+    color: #333; white-space: nowrap;
+  }
+
+  .or-label {
+    font-size: 9px; font-weight: 700; color: #888;
+    text-transform: uppercase; letter-spacing: 0.5px; margin: 1px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <span style="font-size:24px;">🪟</span>
+  <h1>Lindsay Windows — Load Planner</h1>
+  <span>System &amp; User Flow · June 2026</span>
+</div>
+
+<!-- ══ USER FLOW ══════════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">User Flow — Supervisor Perspective</div>
+
+  <div class="tab-strip" style="margin-bottom:24px;">
+    <div class="tab active">① Add Orders</div>
+    <div class="tab">② Load Plan</div>
+    <div class="tab">③ Analysis</div>
+  </div>
+
+  <div class="flow" style="gap:0; align-items:flex-start;">
+
+    <!-- TAB 1: Add Orders -->
+    <div class="flow-col" style="min-width:170px;">
+      <div class="flow-col-label">Add Orders</div>
+      <div class="node node-blue" style="margin-bottom:10px;">📄 FeneVision xlsx<sub>upload GA Trucks export</sub></div>
+      <div class="or-label">or</div>
+      <div class="node node-light" style="margin-bottom:4px;margin-top:4px;">💬 Natural Language<sub>free-text order entry</sub></div>
+      <div class="or-label">or</div>
+      <div class="node node-light" style="margin-top:4px;">📋 CSV Upload<sub>order_id, address, sqft</sub></div>
+
+      <div class="arrow-v" style="margin:10px 0;"></div>
+      <div class="node node-yellow">⚙ Auto-geocode<sub>Nominatim / OSRM</sub></div>
+      <div class="arrow-v" style="margin:6px 0;"></div>
+      <div class="node node-light" style="font-size:11px;">
+        Orders Table<br>
+        <span style="color:#F58220;font-weight:700;">Builder</span> /
+        <span style="color:#1a7cb8;font-weight:700;">Distribution</span> tagged
+      </div>
+    </div>
+
+    <div class="arrow-h blue" style="padding-top:40px;"></div>
+
+    <!-- TAB 2: Load Plan -->
+    <div class="flow-col" style="min-width:210px;">
+      <div class="flow-col-label">Load Plan</div>
+
+      <div class="diamond orange" style="margin-bottom:8px;">Routing<br>Mode?</div>
+
+      <!-- All Orders branch -->
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;">
+          <div style="font-size:9px;color:#F58220;font-weight:700;">ALL ORDERS</div>
+          <div class="node node-orange" style="min-width:90px;font-size:11px;">🔄 Optimize<sub>all stops</sub></div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:5px;">
+          <div style="font-size:9px;color:#1a7cb8;font-weight:700;">TWO-PHASE</div>
+          <div class="node node-blue" style="min-width:90px;font-size:11px;">📦 Phase 1<sub>Distribution only</sub></div>
+          <div style="font-size:10px;color:#888;">↓ lock</div>
+          <div class="node node-blue" style="min-width:90px;font-size:11px;">🏠 Phase 2<sub>Builders added</sub></div>
+        </div>
+      </div>
+
+      <div class="diamond" style="margin-bottom:8px;">Drops?</div>
+
+      <div style="display:flex;gap:10px;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="font-size:9px;color:#2e7d32;font-weight:700;">NO DROPS</div>
+          <div class="node node-green" style="min-width:80px;font-size:11px;">✓ Plan Ready</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <div style="font-size:9px;color:#b71c1c;font-weight:700;">HAS DROPS</div>
+          <div class="node node-red" style="min-width:90px;font-size:11px;">🚌 Multi-day flag<sub>NC/SC/AL runs</sub></div>
+        </div>
+      </div>
+
+      <div class="arrow-v" style="margin:10px 0;"></div>
+      <div class="node node-light" style="font-size:11px;">
+        Route Cards<br>
+        <span style="font-size:10px;font-weight:400;">↑↓ reorder stops · ⇄ move truck</span><br>
+        <span style="font-size:10px;font-weight:400;">☑ confirm per stop</span>
+      </div>
+      <div class="arrow-v" style="margin:6px 0;"></div>
+      <div class="node node-orange" style="font-size:11px;">⬇ Export Route Sheets<sub>HTML · drivers scan QR</sub></div>
+      <div class="arrow-v" style="margin:6px 0;"></div>
+      <div class="node node-light" style="font-size:11px;">💾 Save Plan (.json)<sub>reload next session</sub></div>
+    </div>
+
+    <div class="arrow-h blue" style="padding-top:40px;"></div>
+
+    <!-- TAB 3: Analysis -->
+    <div class="flow-col" style="min-width:170px;">
+      <div class="flow-col-label">Analysis</div>
+      <div class="node node-blue" style="margin-bottom:6px;">📊 Summary Table<sub>utilization per truck</sub></div>
+      <div class="arrow-v" style="margin:4px 0;"></div>
+      <div class="node node-light" style="margin-bottom:6px;font-size:11px;">🏠 Constraint Audit<sub>homebuilder PASS/FAIL</sub></div>
+      <div class="arrow-v" style="margin:4px 0;"></div>
+      <div class="node node-yellow" style="margin-bottom:6px;font-size:11px;">⚖ Supervisor vs Optimizer<sub>trucks · utilization · fleet mix</sub></div>
+      <div class="arrow-v" style="margin:4px 0;"></div>
+      <div class="node node-orange" style="font-size:11px;">⬇ Export Excel<sub>4-sheet workbook</sub></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ══ BACKEND PIPELINE ════════════════════════════════════════════ -->
+<div class="section">
+  <div class="section-title">Backend Pipeline — Data Flow</div>
+
+  <div class="pipeline" style="align-items:flex-start;">
+
+    <!-- INPUT -->
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div class="pipe-box node-blue" style="min-width:140px;">
+        📄 FeneVision xlsx
+        <code>GA_Trucks_YYYY-MM-DD.xlsx</code>
+      </div>
+      <div class="pipe-box" style="background:#fff3e0;border:1.5px solid #F58220;font-size:11px;min-width:140px;">
+        Route Truck Summary<br>
+        <code>supervisor_routes[]</code>
+        <span style="font-size:10px;display:block;margin-top:3px;color:#888;">→ Analysis comparison</span>
+      </div>
+    </div>
+
+    <div class="pipe-arrow">→</div>
+
+    <!-- IMPORT -->
+    <div class="pipe-box" style="background:#e3f2fd;border:1.5px solid #1a7cb8;min-width:160px;">
+      import_fenevision_xlsx()
+      <code>src/import_fenevision.py</code>
+      <ul class="constraint-list" style="margin-top:6px;">
+        <li>Aggregate line items → stop</li>
+        <li>TruckTypeDesc → allowed_trucks</li>
+        <li>Exclude MO interplant</li>
+        <li>fenevision_ids per stop</li>
+      </ul>
+    </div>
+
+    <div class="pipe-arrow">→</div>
+
+    <!-- GEOCODE -->
+    <div class="pipe-box node-yellow" style="min-width:130px;">
+      Geocode
+      <code>geocode_address()</code>
+      <ul class="constraint-list" style="margin-top:6px;">
+        <li>Nominatim free</li>
+        <li>OSRM road dist.</li>
+        <li>lat/lon on Order</li>
+      </ul>
+    </div>
+
+    <div class="pipe-arrow">→</div>
+
+    <!-- SOLVE -->
+    <div class="pipe-box" style="background:#1a1a2e;color:#fff;min-width:190px;border:2px solid #F58220;">
+      <div style="color:#F58220;font-weight:700;font-size:12px;margin-bottom:6px;">🔧 solve()</div>
+      <code style="color:#aad4f5;">src/optimizer.py</code>
+      <div style="font-size:10px;margin-top:8px;line-height:1.7;color:#e0e0e0;">
+        OR-Tools CVRP<br>
+        ✦ Capacity dimension (sqft)<br>
+        ✦ Time dim · 9-hr HOS cap<br>
+        ✦ Per-truck type speed<br>
+        ✦ SetAllowedVehicles (HB)<br>
+        ✦ Fixed cost → fill 26ft first<br>
+        ✦ Priority weighting in dist_cb<br>
+        ✦ Disjunction → dropped rpt<br>
+        ✦ OSRM road matrix
+      </div>
+    </div>
+
+    <div class="pipe-arrow" style="color:#F58220;">→</div>
+
+    <!-- ASSIGNMENTS -->
+    <div class="pipe-box" style="background:#e8f5e9;border:1.5px solid #2e7d32;min-width:140px;">
+      TruckAssignment[]
+      <code>src/models.py</code>
+      <ul class="constraint-list" style="margin-top:6px;">
+        <li>stops (LIFO order)</li>
+        <li>route_distance_miles</li>
+        <li>route_time_hours</li>
+        <li>utilization_pct</li>
+      </ul>
+    </div>
+
+    <div class="pipe-arrow">→</div>
+
+    <!-- EXPORT -->
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div class="pipe-box node-orange" style="min-width:140px;">
+        export_html_routes()
+        <code>src/export_html.py</code>
+        <span style="font-size:10px;display:block;margin-top:4px;">Drivers scan QR on phone</span>
+      </div>
+      <div class="pipe-box" style="background:#ede7f6;border:1.5px solid #4a148c;font-size:11px;min-width:140px;">
+        generate_report()
+        <code>src/analysis.py</code>
+        <span style="font-size:10px;display:block;margin-top:3px;color:#4a148c;">4-sheet Excel workbook</span>
+      </div>
+      <div class="pipe-box" style="background:#fff;border:1.5px solid #d0d8e8;font-size:11px;min-width:140px;">
+        persistence.py
+        <code>serialize_plan()</code>
+        <span style="font-size:10px;display:block;margin-top:3px;color:#888;">Session save/load JSON</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MODELS row -->
+  <div style="margin-top:24px;padding:14px 18px;background:#fff;border-radius:8px;border:1px solid #e0e6f0;max-width:900px;">
+    <div style="font-size:11px;font-weight:700;color:#1a7cb8;margin-bottom:10px;text-transform:uppercase;letter-spacing:0.8px;">Core Models (src/models.py)</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;">
+      <div class="sub-node" style="background:#e3f2fd;border-color:#1a7cb8;font-size:11px;padding:8px 14px;">
+        <strong>Order</strong><br>
+        <span style="font-size:10px;color:#555;">order_id · address · sqft<br>lat/lon · allowed_truck_types<br>fenevision_ids · priority</span>
+      </div>
+      <div class="sub-node" style="background:#fff3e0;border-color:#F58220;font-size:11px;padding:8px 14px;">
+        <strong>Truck</strong><br>
+        <span style="font-size:10px;color:#555;">name · truck_type · max_capacity<br>driver · employment_type<br>fixed_cost · cost_per_mile</span>
+      </div>
+      <div class="sub-node" style="background:#e8f5e9;border-color:#2e7d32;font-size:11px;padding:8px 14px;">
+        <strong>RouteStop</strong><br>
+        <span style="font-size:10px;color:#555;">order · stop_number</span>
+      </div>
+      <div class="sub-node" style="background:#fce4ec;border-color:#c62828;font-size:11px;padding:8px 14px;">
+        <strong>TruckAssignment</strong><br>
+        <span style="font-size:10px;color:#555;">truck · stops[] · miles · hours<br>load_sequence (LIFO)<br>utilization_pct</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LEGEND -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#1a7cb8;"></div>Lindsay Blue — primary data / FeneVision</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#F58220;"></div>Lindsay Orange — user action / export</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2e7d32;"></div>Green — success / output</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fff8e1;border:1px solid #f0c040;"></div>Yellow — optional / geocoding</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1a1a2e;"></div>Dark — OR-Tools solver core</div>
+  <div style="margin-left:auto;font-size:10px;color:#aaa;">Lindsay Windows Load Planner · 2026-06-25</div>
+</div>
+
+</body>
+</html>

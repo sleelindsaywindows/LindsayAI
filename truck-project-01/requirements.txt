@@ -10,3 +10,4 @@ folium>=0.17.0
 streamlit-folium>=0.22.0
 openpyxl>=3.1.0
 qrcode[pil]>=7.4.2
+streamlit-sortables>=0.3.1

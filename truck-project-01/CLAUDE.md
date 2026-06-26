@@ -169,13 +169,26 @@ When the team account is active, replace with Geoff's historical Wednesday (6/17
 
 ---
 
-## Claude Skills — PLACEHOLDER
+## Claude Skills
 
-Two team-defined Claude Code skills are planned. Wire them in once the team account is active.
+Skills active in this project:
 
-**caveman** — purpose and invocation TBD. Add usage notes here when available.
+**caveman** — terse response mode. Auto-loaded by session hook every conversation.
+Invoke explicitly via `/caveman`, `/caveman lite`, `/caveman ultra`.
+Use before any new codebase task or addition. Sub-agents: `caveman:cavecrew-builder`
+(surgical 1-2 file edits), `caveman:cavecrew-investigator` (read-only locator),
+`caveman:cavecrew-reviewer` (diff auditor).
 
-**ponytail** — purpose and invocation TBD. Add usage notes here when available.
+**artifact-planning** — interactive HTML step-through artifacts for flows before implementing.
+Invoke when visualizing multi-step user flows or planning new features.
+Output: self-contained `.html` with Next/Back navigation, one panel per step, backend
+state notes per step. Approve artifact before writing any app code. See `docs/` for examples.
+
+**frontend-design** (pipeline) — UI design system skill, not yet wired in.
+Target use: Lindsay Windows design improvements, component mockups, color/typography system.
+Wire in once team Claude account is active. Pairs with `artifact-planning` for full design → implement flow.
+
+**ponytail** — purpose TBD. Add usage notes when available.
 
 Invocation pattern in Claude Code: `/skill-name`
 
@@ -187,46 +200,63 @@ Invocation pattern in Claude Code: `/skill-name`
 - Solver: bin assignment + route sequencing + truck preference + HOS cap + dropped order reporting
 - UI: NL parse (two-agent), CSV upload, verification card, LIFO display
 - Pre-flight: `validate_inputs()` + `check_route_cap()` for multi-day candidates
-- `src/import_fenevision.py`: FeneVision CSV mapper (`import_fenevision`) + xlsx mapper (`import_fenevision_xlsx`)
-- `Order.allowed_truck_types`: per-customer truck restriction, enforced in optimizer via `SetAllowedVehiclesForIndex`
-- Real truck capacities in config (431.06 / 208 sq ft from Geoff's Trucks sheet)
-- First optimizer run against Geoff's 6/17 historical data; comparison vs Joseph's routes documented
-- Phase 2: in-app FeneVision xlsx upload (no terminal required), CSS solve animation, first-time onboarding modal, printable HTML route sheets with QR codes, tab reorder (Add Orders | Load Plan | Analysis)
+- `src/import_fenevision.py`: FeneVision CSV mapper + xlsx mapper (`import_fenevision_xlsx`)
+- `Order.allowed_truck_types`: per-customer truck restriction, enforced via `SetAllowedVehiclesForIndex`
+- Real truck capacities in config (431.06 / 208 sq ft, confirmed by Geoff 2026-06-17)
+- First optimizer run against Geoff's 6/17 historical data; comparison vs supervisor's routes documented
+- Phase 2: in-app FeneVision xlsx upload, CSS solve animation, onboarding modal, printable HTML route
+  sheets with QR codes, tab reorder (Add Orders | Load Plan | Analysis)
+- Supervisor comparison in Analysis tab (`parse_route_truck_summary()`)
+- OrderNumbers (FeneVision IDs) on route sheet stop cards
+- Session persistence: save/load plan as JSON (`src/persistence.py`)
+- Two-phase optimization: Distribution routes first (locked), then Builder routes
+- Stop time per stop: configurable `stop_time_minutes` in config.yaml + sidebar (default 45 min)
+- Per-vehicle speed: straight 47 mph, trailer 40 mph — separate time matrices in optimizer
+- Auto-geocoding at xlsx import time — coordinates ready before solve, tab jumps to Load Plan
+- Drop triage: three color-coded buckets — 🗓 Multi-Day (amber), 🏠 Homebuilder Conflict (orange),
+  ❌ True Drop (red) — each with action buttons (`_classify_drop()` post-solve heuristic)
+- Tab persistence JS: survives Streamlit reruns; keyboard shortcut fix (Cmd+C → stopImmediatePropagation)
+- Flow diagrams: static reference (`docs/lindsay_flow_diagram.html`) + interactive 6-step artifact
+  (`docs/lindsay_flow_artifact.html`)
 
 ### Next (in priority order)
-1. **Customer truck restriction lookup table** — currently derived from route's TruckTypeDesc;
-   needs a per-customer table (Geoff to confirm) so restrictions hold even when a customer
-   appears on a new route or is entered via NL/CSV upload
-2. **Real driving distances** — swap `_haversine_miles` in `_build_distance_matrix` for OSRM
-   (free) or Google Maps Distance Matrix API (~$5/1000 pairs). Nothing else changes.
-3. **Unload time buffer per stop** — add configurable `unload_minutes_per_stop` to config.yaml;
-   use it in HOS modeling alongside mileage. Check with [Names] in Minnesota for realistic values.
-4. **2D packing check** — add `length`/`width` to `Order`; use `rectpack` to catch loads that
-   pass the sq ft check but physically won't fit
-5. **Delivery time windows** — `time_window_open`/`close` on `Order`; Time dimension in solver
-6. **Constraint relaxation** — re-run with soft time windows if primary solve drops orders
-7. **Session persistence** — file-based JSON for single-machine use; when app goes multi-user
-   or cloud, add Streamlit OAuth (Google/Microsoft SSO). Deferred until after Joseph meeting.
-8. **Driver name assignment** — Joseph names routes by driver (Kristin, Juan, Raymond, etc.).
-   Optimizer uses generic truck names. Needs a driver roster or manual assignment UI — defer
-   until after Joseph meeting.
-9. **MapKit JS — Apple Maps multi-stop routes** — Apple Maps URL scheme only supports
-   single-destination deep links; multi-waypoint routing requires Apple's MapKit JS web API.
-   Current workaround: per-stop 🍎 links in the HTML route sheet (iOS only, hidden on print).
-   Full implementation: embed a MapKit JS map in the HTML export that builds a true multi-stop
-   route and generates a shareable link drivers can tap. Requires an Apple Developer account
-   ($99/yr) and a MapKit JS API key. Not blocking until drivers actively complain about the
-   per-stop workaround. Playwright automation of maps.apple.com was evaluated and rejected —
-   fragile against UI changes and doesn't produce a deep link usable on a driver's phone.
-10. **FeneVision live feed** — VPN + stored procedures + scheduled job; proceed in parallel once
-   the optimizer output has been manually validated for several weeks
+1. **Geocoding UX — move to Load Plan tab** — currently geocodes on Add Orders tab before jump.
+   Better: jump immediately, show unified "Geocoding → Optimizing" animation on Load Plan.
+   Approved in artifact Step 2 (Option B). Not yet implemented.
+2. **Multi-day routing as separate route section** — dropped multi-day stops should re-solve
+   with relaxed HOS cap and appear as distinct "Multi-Day Routes" cards, not just the amber banner.
+   Artifact Step 4 shows the target design.
+3. **Customer truck restriction lookup table** — currently from route's TruckTypeDesc; needs
+   per-customer table so restrictions hold when a customer appears on a new route or via NL/CSV.
+   Blocked on Geoff confirmation.
+4. **Real driving distances** — OSRM server config exists; wire `osrm_server` fully into
+   `_build_distance_matrix` (currently falls back to haversine). Nothing else changes.
+5. **2D packing check** — need PartNo→frame_type lookup from Lindsay (nail fin=3", 4-9/16=6",
+   6-9/16=8"). Email to Joseph pending. Implement with `rectpack` once mapping is confirmed.
+6. **Frontend UI design** — Lindsay Windows design system pass using `frontend-design` skill
+   (pipeline, not yet wired in). Pair with `artifact-planning` for design → implement flow.
+7. **Driver name assignment** — supervisor names routes by driver (Kristin, Juan, Raymond).
+   Optimizer uses generic truck names. Needs driver roster or manual assignment UI.
+8. **Delivery time windows** — `time_window_open`/`close` on `Order`; Time dimension in solver.
+9. **MapKit JS** — multi-stop Apple Maps routes in HTML export. Requires Apple Developer account.
+   Not blocking until drivers complain about per-stop workaround.
+10. **FeneVision live feed** — VPN + stored procedures + scheduled job. After optimizer output
+    validated manually for several weeks.
+11. **Mermaid diagram for code understanding** — install mermaid-diagram plugin (`/mermaid-diagram`)
+    and generate feature diagrams after large changes instead of line-by-line review. From Ray Amjad
+    workflow.
+
+### Blocked (external dependency)
+- Items 3, 4 (partial): Geoff / Joseph confirmation
+- Item 5: PartNo→frame_type mapping from Lindsay
+- Item 10: IT/VPN/SQL credentials
 
 ### Intentional simplifications (not bugs)
-- Screen space = 0
-- Haversine straight-line distances until real routing is validated
-- No time windows
-- Trailer exchange stops not modeled (no special unload-time logic)
-- `cost_per_mile` stored in config but not yet used in output or objective function
+- Screen space = 0 (screens placed on top, zero floor allocation)
+- Haversine straight-line distances (OSRM wired but optional)
+- No time windows yet
+- Trailer exchange stops not modeled
+- `cost_per_mile` stored in config, not yet used in objective function
 
 ---
 

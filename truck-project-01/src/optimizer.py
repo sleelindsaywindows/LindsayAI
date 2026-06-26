@@ -3,7 +3,7 @@ Capacitated Vehicle Routing Problem solver — Google OR-Tools.
 
 Constraint model:
   - Capacity dimension: hard floor-space cap per truck
-  - Time dimension: hard daily hour cap per driver (Joseph's 9-hour rule)
+  - Time dimension: hard daily hour cap per driver (supervisor's 9-hour rule)
       straight trucks: haversine_miles / straight_speed_mph (47 mph)
       53-ft trailers:  haversine_miles / trailer_speed_mph  (40 mph)
       route_time = sum(drive_legs) + (stops × stop_time_minutes)
@@ -35,10 +35,10 @@ except ImportError:
 
 DISTANCE_SCALE = 1_000      # integer units per mile (thousandths of a mile) — cost callback only
 TIME_SCALE = 100            # integer units per minute (hundredths of a minute) — time dimension
-MAX_ROUTE_HOURS = 9.0       # Joseph's practical daily driver cap; 11 hrs is legal max
+MAX_ROUTE_HOURS = 9.0       # supervisor's practical daily driver cap; 11 hrs is legal max
 STOP_TIME_MINUTES = 45.0    # default unload time per stop (neighborhood delivery, no dock)
 STRAIGHT_SPEED_MPH = 47.0   # 26ft straight trucks — nimbler on tight residential streets
-TRAILER_SPEED_MPH = 40.0    # 53ft trailers — slower on all road types (Joseph confirmed)
+TRAILER_SPEED_MPH = 40.0    # 53ft trailers — slower on all road types (confirmed)
 AVG_SPEED_MPH = 45.0        # fallback when truck type unknown (used in check_route_cap)
 SOLVER_TIME_LIMIT_SECONDS = 15
 
