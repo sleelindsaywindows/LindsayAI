@@ -653,6 +653,7 @@ def render_add_orders(cfg: dict):
                 )
                 if not st.button("Load selected sheet", key="fv_sheet_confirm"):
                     st.stop()
+                st.session_state["_fv_manual_sheet"] = True
 
             try:
                 with st.spinner("Reading FeneVision file…"):
@@ -678,7 +679,9 @@ def render_add_orders(cfg: dict):
                     st.session_state.uploader_key += 1
                     st.session_state.auto_run_pending = True
                     st.session_state.fv_filename = fv_file.name
-                    st.session_state._jump_plan = True
+                    _manual_pick = st.session_state.pop("_fv_manual_sheet", False)
+                    if not _manual_pick:
+                        st.session_state._jump_plan = True
                     try:
                         fv_file.seek(0)
                         st.session_state.supervisor_routes = parse_route_truck_summary(
@@ -1527,13 +1530,16 @@ def render_load_plan(cfg: dict):
                 st.markdown("**Delivery Sequence** — drag ⠿ to reorder · ⇄ to move truck")
 
                 # Draggable reorder (within truck)
+                # Labels are display-only; order_id stored in parallel list for mapping
+                _stop_ids_orig = [stop.order.order_id for stop in assignment.stops]
                 _sort_labels_orig = [
-                    f"{stop.order.order_id}||{stop.stop_number}. {stop.order.customer_name}"
+                    f"Stop {stop.stop_number} · {stop.order.customer_name}"
                     for stop in assignment.stops
                 ]
                 _sorted_labels = _sort_items(_sort_labels_orig, key=f"sort_{v_idx}")
                 if _sorted_labels != _sort_labels_orig:
-                    _new_ids = [lbl.split("||")[0] for lbl in _sorted_labels]
+                    _label_to_id = dict(zip(_sort_labels_orig, _stop_ids_orig))
+                    _new_ids = [_label_to_id[lbl] for lbl in _sorted_labels if lbl in _label_to_id]
                     _id_to_stop = {s.order.order_id: s for s in _all_asgn[v_idx].stops}
                     _all_asgn[v_idx].stops = [_id_to_stop[oid] for oid in _new_ids if oid in _id_to_stop]
                     for _n, _stp in enumerate(_all_asgn[v_idx].stops, 1):
