@@ -665,30 +665,44 @@ def render_add_orders(cfg: dict):
             except Exception as e:
                 st.error(f"Could not read FeneVision file: {e}")
             else:
-                st.session_state.orders = new_orders
-                st.session_state.assignments = []
-                st.session_state.dropped = []
-                st.session_state.uploader_key += 1
-                st.session_state.auto_run_pending = True
-                st.session_state.fv_filename = fv_file.name
-                st.session_state._jump_plan = True
-                try:
-                    fv_file.seek(0)
-                    st.session_state.supervisor_routes = parse_route_truck_summary(
-                        fv_file, exclude_route_patterns=exclude_patterns
-                    )
-                except Exception:
-                    st.session_state.supervisor_routes = []
-                if GEOCODING_AVAILABLE:
-                    st.session_state.auto_geocode_pending = True
-                msg = f"✅ {len(new_orders)} stops loaded"
+                filter_notes = []
                 if excluded:
-                    msg += f" · {len(excluded)} interplant route(s) excluded"
+                    filter_notes.append(f"{len(excluded)} interplant route(s) excluded")
                 if skipped:
-                    msg += f" · {len(skipped)} placeholder stop(s) skipped"
-                msg += " — heading to Load Plan to optimize…"
-                st.success(msg)
-                st.rerun()
+                    filter_notes.append(f"{len(skipped)} placeholder stop(s) skipped")
+
+                if new_orders:
+                    st.session_state.orders = new_orders
+                    st.session_state.assignments = []
+                    st.session_state.dropped = []
+                    st.session_state.uploader_key += 1
+                    st.session_state.auto_run_pending = True
+                    st.session_state.fv_filename = fv_file.name
+                    st.session_state._jump_plan = True
+                    try:
+                        fv_file.seek(0)
+                        st.session_state.supervisor_routes = parse_route_truck_summary(
+                            fv_file, exclude_route_patterns=exclude_patterns
+                        )
+                    except Exception:
+                        st.session_state.supervisor_routes = []
+                    if GEOCODING_AVAILABLE:
+                        st.session_state.auto_geocode_pending = True
+                    msg = f"✅ {len(new_orders)} stops loaded"
+                    if filter_notes:
+                        msg += " · " + " · ".join(filter_notes)
+                    msg += " — heading to Load Plan to optimize…"
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    if filter_notes:
+                        body = "all stops were filtered out (" + " · ".join(filter_notes) + ")"
+                    else:
+                        body = "the file contained no data rows"
+                    st.warning(
+                        f"No orders imported — {body}. "
+                        "Check exclusion patterns (Import Filters in sidebar) or the sqft threshold."
+                    )
 
     # ── Right: CSV + English tabs ──
     with col_secondary:
@@ -701,8 +715,11 @@ def render_add_orders(cfg: dict):
 
         with _tab_csv:
             st.caption(
-                f"Required: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})  "
-                f"— optional: `priority`, `notes`"
+                f"Required: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})"
+                f" — optional: `priority`, `notes`"
+            )
+            st.caption(
+                "`customer_name` = business name · `address` = full shipping address (street, city, state, zip)"
             )
             uploaded = st.file_uploader(
                 "Choose CSV",
@@ -740,9 +757,10 @@ def render_add_orders(cfg: dict):
             if not has_key:
                 st.caption("ANTHROPIC_API_KEY not set — add to .env to enable. CSV + optimizer work without it.")
             st.caption(
-                f'Describe a stop in plain language — Claude parses it.  \n'
-                f'e.g. _"Order 2241, Riverside Homes, 450 River Rd Macon GA, 48 {abbr}, rush"_'
+                f"Describe a stop in plain English — for any location, include the **business name** "
+                f"and **full shipping address** (street, city, state, zip)."
             )
+            st.caption(f'e.g. _"Riverside Homes, 450 River Rd Macon GA 31201, 48 {abbr}, gate code 1234"_')
             col_input, col_btn = st.columns([4, 1])
             nl_text = col_input.text_input(
                 "Order description",

@@ -1,0 +1,214 @@
+ITERATION NOTES -- What Changed and Where It Came From
+
+This doc exists so the work account session knows exactly which parts of the codebase
+were built by Peyton vs. pulled in from a separate team prototype. Do not conflate them.
+
+================================================================================
+
+ITERATION 1 -- Peyton's Original Build (LyndsayWindowsLLC)
+
+Everything below was built from scratch in the personal account session.
+
+app.py -- Full Streamlit UI
+  - Two-tab layout (Add Orders / Load Plan)
+  - Sidebar fleet/depot config that writes back to config.yaml
+  - NL order input with parse + verify flow
+  - CSV upload with column validation
+  - Order table, clear button
+  - Load plan display with delivery sequence + LIFO load sequence side by side
+  - Google Maps URL per stop in the .txt export
+  - Graceful degradation (disabled UI elements when API key or geopy is missing)
+
+src/parser.py -- Two-agent NL parsing pipeline
+  - _parse_order(): claude-haiku converts free-text to structured JSON
+  - _verify_parse(): second independent claude-haiku call re-reads original text and
+    parsed result; returns {confident, issues, summary}
+  - Verifier never shares context with parser -- catches hallucinated values
+  - parse_and_verify() public interface used by app.py
+
+src/models.py -- Data models
+  - Order dataclass (order_id, customer_name, address, capacity_units, priority, notes, lat, lon)
+  - Truck dataclass (name, truck_type, max_capacity)
+  - RouteStop dataclass (order, stop_number)
+  - TruckAssignment with computed properties:
+      load_sequence -- LIFO: reversed(delivery_stops)
+      total_capacity_used
+      utilization_pct
+
+src/optimizer.py (partial) -- Core OR-Tools solver
+  - Haversine distance matrix
+  - Basic CVRP with capacity dimension
+  - Priority weighting in distance callback (urgent orders pulled to earlier stops)
+  - Optional geocoding via Nominatim/geopy with graceful fallback
+  - Integer scaling (SCALE = 100) for OR-Tools
+
+config.yaml -- Fleet and depot config pattern (no code changes needed to update fleet)
+
+sample_data/example_orders.csv -- Kansas City area test orders
+
+================================================================================
+
+ITERATION 2 -- AWLindsay Team Prototype (LW-Storage-and-Shipping-Basic)
+
+This is NOT Peyton's code. It is a separate prototype from the Lindsay Windows team
+GitHub (AWLindsay/LW-Storage-and-Shipping-Basic). It was reviewed and specific solver
+improvements were extracted. Nothing was copied wholesale -- the patterns were
+re-implemented into the existing architecture.
+
+Solver improvements taken from this prototype:
+
+  SetFixedCostOfVehicle
+    Solver was activating 53-ft trailers for tiny orders. Fixed cost steers it to
+    fill 26-ft trucks first.
+
+  AddDimension("Distance")
+    No per-driver mileage cap existed. Added HOS compliance ceiling.
+
+  AddDisjunction + penalty
+    Solver was returning empty list on over-capacity. Now drops orders explicitly
+    and reports them.
+
+  check_route_cap()
+    No pre-flight check existed. Now warns about orders that will exceed the cap
+    before the solver runs.
+
+  validate_inputs()
+    No input validation before OR-Tools. Now catches bad data with readable errors.
+
+  DISTANCE_SCALE = 1000
+    Was using meters. Switched to thousandths-of-miles -- matches domain language,
+    better precision on dense stops.
+
+  Dropped order detection
+    Pattern to surface which specific orders were dropped by the solver.
+
+  route_distance_miles per truck
+    Total miles per truck was not tracked or displayed.
+
+What was NOT taken from the team prototype:
+  - No UI (it was CLI only) -- kept Streamlit
+  - No NL parsing -- kept two-agent pipeline
+  - No LIFO load sequence (they did not implement it) -- kept and enforced in model
+  - No priority weighting -- kept and preserved
+  - No customer_name field -- kept
+  - No config.yaml pattern -- kept
+  - No CSV pipeline -- kept
+  - No graceful degradation -- kept
+
+================================================================================
+
+SESSION 2026-06-26 -- Batch Improvements (PRs #3-#7, 2 in progress)
+================================================================================
+
+PR #3 — Internal Tools Portal: Lee Access Note
+  docs/portal/index.html
+  Amber callout under Truck Load Planner card: Georgia Plant only, Lee's plant
+  does not yet have access. "Load Planner — Additional Plants" added to Coming Soon.
+
+PR #4 — Help Bar: Shipping Name + Address Required
+  app.py
+  English (NL) tab and CSV tab now explicitly state business name + full shipping
+  address (street, city, state, zip) required for all locations.
+  Code review fix: note removed from FeneVision slide (FeneVision users don't type
+  addresses). Two separate st.caption() calls (soft-break reliability).
+
+PR #5 — Tab-Jump Bug Fix on Empty FeneVision Import
+  app.py
+  Root bug: _jump_plan = True set unconditionally after FeneVision import even when
+  new_orders == 0. Fix: gated behind `if new_orders`.
+  Secondary bugs caught by code review:
+    C1: Warning swallowed by unconditional st.rerun()
+    C2: Existing plan wiped on failed import; state mutation moved inside guard
+    C4: Uploader key bumped on failure, forcing user to re-pick file
+    C3: Misleading "filtered out" message for blank files (no data rows)
+    C5: filter_notes list deduplicated across success/warning paths
+
+PR #6 — Artifact: Planning Horizons + Per-Plant + FeneVision Write-Back
+  docs/redesign_artifact.html (8 screens -> 11 screens)
+  Screen 9: Planning Horizons — Pre-Plan (Weekly) vs Day-Of (Morning).
+    Distribution = week before at GA plant. Builder = morning of.
+    Backend: planning_mode session state, day-of freezes vehicle assignments.
+  Screen 10: Per-Plant Configurability — plant selector dropdown, per-plant
+    fleet/routing, config.yaml `plants:` target architecture shown.
+  Screen 11: Supervisor Approval -> FeneVision Write-Back — per-route Approve
+    buttons, Submit to FeneVision (requires all approved), confirmation modal.
+    Stored procedures documented: usp_UpdateRouteSequence, usp_AssignTruckToRoute.
+    Blocked on IT/VPN. Short-term stub: approved flag + JSON persistence.
+  Code review: screens 7+8 step-labels updated "of 8"->"of 11", trailer capacity
+  corrected to 431.06 sq ft, mode pills use shared CSS class.
+
+PR #7 — Route Name in LIFO Load Sequence Tab
+  app.py, src/models.py, src/import_fenevision.py
+  Load sequence rows now show FeneVision route name as a blue pill tag.
+  All user strings wrapped with html.escape() — XSS safety.
+  Collapsed if/else into single flex-row template.
+  Order.route_name field added to dataclass.
+  FeneVision importer: RouteName -> route_name field (was incorrectly in notes=).
+
+IN PROGRESS (session limit hit; retried):
+  Unit 2 — Distribution/Builder Split: removes Phase 1 lock, adds "Lock
+    distribution first" toggle in sidebar routing config, renames Two-Phase pill
+    to "Distribution / Builder Split".
+  Unit 6 — Multi-day route cards: full parity with regular cards (driver input,
+    drag-reorder, FeneVision IDs, route name tag, LIFO column).
+
+EARLIER THIS SESSION (no PR, direct commits to main):
+  - route_name field added to Order model; FeneVision importer populates from
+    RouteName column (was in notes= before — breaking change, requires re-import)
+  - Export HTML: route name as blue pill on stop cards; ⚠ removed from notes;
+    coordinates (lat/lon) removed from stop cards entirely
+  - streamlit-sortables 0.3.1 installed into /opt/anaconda3 (Streamlit's Python).
+    pip3 was installing into system Python 2.7 — wrong interpreter.
+  - Unused sup_stop_sets / opt_stop_sets removed from Analysis tab
+  - redesign_artifact.html: screens 7+8 added (Two-Phase + Multi-Day)
+
+KNOWN CONSTRAINTS (do not change without reason):
+  - 53ft trailer: 431.06 sq ft practical (Geoff confirmed 2026-06-17)
+  - 26ft straight: 208 sq ft practical
+  - HOS cap: 9 hr day routes, 24 hr for multi-day re-solve
+  - Stop time: 45 min default
+  - Straight: 47 mph, Trailer: 40 mph
+  - LIFO: always derived from delivery sequence, never set independently
+
+BLOCKED (external dependency):
+  - Per-customer truck restriction table: Geoff confirmation pending
+  - OSRM real driving distances: wired but inactive (haversine fallback)
+  - 2D packing check: PartNo->frame_type mapping from Lindsay (email pending)
+  - FeneVision write-back (Screen 11): VPN + stored procedures (IT)
+  - MapKit JS: Apple Developer account
+  - Driver roster: Joseph input
+
+================================================================================
+
+TRUCK-PROJECT-01 -- Merge Synthesis (this session)
+
+New things that did not exist in either prior iteration:
+
+src/models.py additions
+  - Truck.fixed_cost -- activation penalty field (feeds SetFixedCostOfVehicle)
+  - Truck.cost_per_mile -- placeholder for future cost objective
+  - TruckAssignment.route_distance_miles -- stores solver output per truck
+
+config.yaml changes
+  - Capacities corrected to practical sq ft: 53-ft = 384, 26-ft = 176
+    (was linear feet before)
+  - fixed_cost and cost_per_mile added per truck
+  - routing section added: max_route_miles (400 -- placeholder, needs team
+    validation), solver_time_limit_seconds
+  - Depot updated to Georgia plant context (address still blank -- needs real address)
+
+app.py additions
+  - Dropped orders banner (red alert with order IDs)
+  - Route distance display per truck in expander label
+  - 4th metric column: Fleet Utilization %
+  - Pre-flight warnings surface in UI when geocoding is on
+  - validate_inputs() called before solver
+  - Sidebar exposes max_route_miles as an editable field
+  - fixed_cost and cost_per_mile preserved when saving sidebar config
+
+sample_data/example_orders.csv
+  - Replaced Kansas City data with Georgia-area addresses
+
+CLAUDE.md
+  - Written from scratch this session with full business context, design history,
+    field mapping table, and placeholders for sample data and team skills
