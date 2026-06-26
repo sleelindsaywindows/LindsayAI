@@ -1081,9 +1081,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-s
 
 <!-- ═══════════════════════════════════════════════════ SCREEN 7 — TWO-PHASE -->
 <div class="step" id="s7">
-  <div class="step-label">Screen 7 of 8 — Two-Phase Routing</div>
-  <div class="step-title">Two-Phase Solve Flow</div>
-  <div class="step-sub">Distribution routes locked first — builder routes fill remaining straight trucks. Prevents homebuilder stops from competing with commercial customers for trailer space.</div>
+  <div class="step-label">Screen 7 of 11 — Distribution / Builder Split</div>
+  <div class="step-title">Distribution / Builder Split</div>
+  <div class="step-sub">Distribution stops (lumber yards, building supply — trailers) solved with higher weight before builder stops (residential — straight trucks). Not locked in sequence: both solve together, distribution priority enforced via cost weighting. Toggle in sidebar: "Lock distribution first" for sequential solve.</div>
 
   <!-- App chrome -->
   <div class="app-topbar">
@@ -1128,33 +1128,33 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-s
       <!-- Mode pills -->
       <div style="display:flex;gap:6px;margin-bottom:14px;">
         <div style="padding:6px 16px;border-radius:50px;font-size:12px;font-weight:700;background:#f0f4f8;color:#666;cursor:pointer;">All Orders</div>
-        <div style="padding:6px 16px;border-radius:50px;font-size:12px;font-weight:700;background:#1a7cb8;color:#fff;">Two-Phase</div>
+        <div style="padding:6px 16px;border-radius:50px;font-size:12px;font-weight:700;background:#1a7cb8;color:#fff;">Distribution / Builder Split</div>
       </div>
 
       <!-- Phase 1 result (locked) -->
       <div style="margin-bottom:10px;">
         <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#555;margin-bottom:6px;">
-          🔒 Phase 1 — Distribution Routes <span style="color:#2e7d32;font-weight:700;">(Locked)</span>
+          📦 Distribution Routes <span style="color:#2e7d32;font-weight:700;">(Solved First)</span>
         </div>
         <!-- Truck card locked -->
-        <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;opacity:.75;margin-bottom:6px;border:1.5px dashed #ccc;">
+        <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;opacity:.75;margin-bottom:6px;border:1.5px solid #c5ddf5;">
           <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;">
             <span style="font-size:22px;">🚚</span>
             <div style="flex:1;font-size:13px;font-weight:800;color:#555;">Truck 3 · 53ft — Juan</div>
             <div style="font-size:11px;font-weight:800;background:#e8f5e9;color:#2e7d32;padding:3px 10px;border-radius:8px;">68% · 210 mi</div>
-            <div style="font-size:10px;font-weight:700;background:#fff3e0;color:#e65100;padding:3px 8px;border-radius:6px;">🔒 Locked</div>
+            <div style="font-size:10px;font-weight:700;background:#e8f5e9;color:#2e7d32;padding:3px 8px;border-radius:6px;">✓ Done</div>
           </div>
           <div style="height:3px;background:#f0f2f5;">
             <div style="width:68%;height:3px;background:#4caf50;"></div>
           </div>
           <div style="padding:5px 12px;font-size:11px;color:#888;">Builders First Supply · Roofers Depot · Atlanta Glass</div>
         </div>
-        <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;opacity:.75;border:1.5px dashed #ccc;">
+        <div style="background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.07);overflow:hidden;opacity:.75;border:1.5px solid #c5ddf5;">
           <div style="padding:8px 12px;display:flex;align-items:center;gap:8px;">
             <span style="font-size:22px;">🚚</span>
             <div style="flex:1;font-size:13px;font-weight:800;color:#555;">Truck 4 · 53ft — Raymond</div>
             <div style="font-size:11px;font-weight:800;background:#fff8e1;color:#e65100;padding:3px 10px;border-radius:8px;">87% · 180 mi</div>
-            <div style="font-size:10px;font-weight:700;background:#fff3e0;color:#e65100;padding:3px 8px;border-radius:6px;">🔒 Locked</div>
+            <div style="font-size:10px;font-weight:700;background:#e8f5e9;color:#2e7d32;padding:3px 8px;border-radius:6px;">✓ Done</div>
           </div>
           <div style="height:3px;background:#f0f2f5;">
             <div style="width:87%;height:3px;background:#ff9800;"></div>
@@ -1212,7 +1212,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-s
 
 <!-- ═══════════════════════════════════════════════════ SCREEN 8 — MULTI-DAY -->
 <div class="step" id="s8">
-  <div class="step-label">Screen 8 of 8 — Multi-Day Routes</div>
+  <div class="step-label">Screen 8 of 11 — Multi-Day Routes</div>
   <div class="step-title">Multi-Day Route Flow</div>
   <div class="step-sub">Stops that exceed the 9-hr HOS cap surface as amber candidates, then re-solve with a relaxed 24-hr cap as separate overnight routes — not just a warning banner.</div>
 
@@ -1322,9 +1322,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-s
 </div>
 
 <div class="step" id="s9">
-  <div class="step-label">Screen 9 of 11 — Planning Horizons</div>
-  <div class="step-title">Planning Horizons — Weekly vs Day-Of</div>
-  <div class="step-sub">Two distinct workflows used at the Georgia plant. Distribution routes are planned a week in advance; builder routes are figured out the morning of delivery. The mode selector makes this explicit and configurable for other plants.</div>
+  <div class="step-label">Screen 9 of 11 — Day-Of Mode (Roadmap)</div>
+  <div class="step-title">Pre-Plan vs Day-Of — Current &amp; Future</div>
+  <div class="step-sub">The current app is a pre-planning tool. Joseph imports the week's FeneVision export, the optimizer assigns trucks and sequences stops, and Joseph compares to his own plan. Day-of mode (load saved plan, apply last-minute changes, re-solve with frozen truck commitments) is a roadmap item — not yet in the app.</div>
 
   <!-- App chrome -->
   <div class="app-topbar">
@@ -1345,11 +1345,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-s
         </div>
       </div>
       <div class="sb-sec">
-        <div class="sb-sec-lbl">Plant Notes</div>
-        <div style="background:#eef4fb;border-radius:6px;padding:8px 10px;font-size:10px;color:#1a3a5c;line-height:1.6;">
-          <strong style="color:#1a7cb8;">Georgia Plant</strong><br>
-          Distribution routes → weekly pre-plan<br>
-          Builder routes → morning-of
+        <div class="sb-sec-lbl">Save / Load</div>
+        <button class="sb-save" style="margin-bottom:6px;">💾 Save Plan</button>
+        <button class="sb-load">📂 Load Plan</button>
+        <div style="font-size:9px;color:#aaa;margin-top:6px;line-height:1.5;">
+          Load Plan → resume pre-plan or start day-of from saved state
         </div>
       </div>
       <div class="sb-div"></div>
@@ -1358,14 +1358,9 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-s
         <div class="sb-row"><span class="sb-row-lbl">Max route hrs</span><span class="sb-chip">9.0 hr</span></div>
         <div class="sb-row"><span class="sb-row-lbl">Stop time</span><span class="sb-chip">45 min</span></div>
       </div>
-      <div class="sb-spacer"></div>
-      <div class="sb-footer">
-        <button class="sb-save">💾 Save Plan</button>
-        <button class="sb-load">📂 Load Plan</button>
-      </div>
     </div>
 
-    <!-- Main area: Load Plan tab with planning mode selector -->
+    <!-- Main area -->
     <div style="flex:1;background:#f4f6fa;display:flex;flex-direction:column;overflow:hidden;">
       <div class="app-tabs">
         <div class="app-tab">Add Orders</div>
@@ -1374,45 +1369,51 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-s
       </div>
       <div class="app-body">
 
-        <!-- Planning mode pills -->
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:#666;margin-bottom:8px;">Planning Mode</div>
-        <div class="mode-selector">
-          <div class="mode-pill active">📅 Pre-Plan (Weekly)</div>
-          <div class="mode-pill">☀️ Day-Of (Morning)</div>
+        <!-- Current state banner -->
+        <div style="background:#e8f5e9;border:1.5px solid #4caf50;border-radius:8px;padding:10px 14px;margin-bottom:14px;">
+          <div style="font-size:11px;font-weight:800;color:#2e7d32;margin-bottom:4px;">✓ Current App — Pre-Plan Mode Only</div>
+          <div style="font-size:11px;color:#444;line-height:1.5;">
+            Import FeneVision xlsx → optimize → compare to Joseph's routes.<br>
+            All trucks eligible. Optimizer chooses which trucks to open and in what order.
+          </div>
         </div>
 
-        <!-- Mode explanation callout -->
+        <!-- Mode comparison cards -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-          <!-- Pre-Plan card (active) -->
+          <!-- Pre-Plan card -->
           <div style="background:#fff;border-radius:8px;border:2px solid #1a7cb8;padding:12px 14px;">
-            <div style="font-size:11px;font-weight:800;color:#1a7cb8;margin-bottom:6px;">📅 Pre-Plan (Weekly)</div>
-            <div style="font-size:11px;color:#444;line-height:1.6;">
-              Done days in advance. All orders known.<br>
-              Full optimizer run across all available trucks.<br>
-              <strong>Accuracy over speed.</strong>
-            </div>
-            <div style="margin-top:8px;font-size:10px;color:#1a7cb8;font-weight:700;background:#eef4fb;border-radius:4px;padding:4px 8px;display:inline-block;">
-              ✓ Active mode
+            <div style="font-size:11px;font-weight:800;color:#1a7cb8;margin-bottom:6px;">📅 Pre-Plan <span style="background:#e8f5e9;color:#2e7d32;border-radius:4px;padding:1px 6px;font-size:9px;">IN APP</span></div>
+            <div style="font-size:11px;color:#444;line-height:1.5;">
+              Done before the week. All orders known.<br>
+              Full optimizer — picks which trucks to use.<br>
+              Compare to Joseph's route as ground truth.<br>
+              <strong>Distribution + Builder split applies here.</strong>
             </div>
           </div>
-          <!-- Day-Of card -->
-          <div style="background:#fafcff;border-radius:8px;border:1.5px solid #dde3ea;padding:12px 14px;opacity:.75;">
-            <div style="font-size:11px;font-weight:800;color:#888;margin-bottom:6px;">☀️ Day-Of (Morning)</div>
-            <div style="font-size:11px;color:#666;line-height:1.6;">
-              Run morning of delivery. Truck set already committed.<br>
-              Re-sequences stops only — no truck add/remove.<br>
+          <!-- Day-Of card (roadmap) -->
+          <div style="background:#fafcff;border-radius:8px;border:1.5px solid #dde3ea;padding:12px 14px;">
+            <div style="font-size:11px;font-weight:800;color:#888;margin-bottom:6px;">☀️ Day-Of <span style="background:#fff3e0;color:#e65100;border-radius:4px;padding:1px 6px;font-size:9px;">ROADMAP</span></div>
+            <div style="font-size:11px;color:#666;line-height:1.5;">
+              Morning of delivery. Load saved pre-plan.<br>
+              Apply last-minute order changes (adds/cancels).<br>
+              Re-solve with committed trucks only.<br>
+              Trucks CAN swap (driver callout → ⇄ move button).<br>
               <strong>Speed over accuracy.</strong>
             </div>
-            <div style="margin-top:8px;font-size:10px;color:#888;font-weight:600;">
-              Freezes vehicle assignments
+            <div style="margin-top:8px;font-size:10px;color:#aaa;">
+              Needs: <code>solve(fixed_vehicles=True)</code> + save/load flow
             </div>
           </div>
         </div>
 
-        <!-- Solve button (pre-plan context) -->
-        <div class="solve-block" style="padding:12px 0 4px;">
-          <button class="solve-btn">🚛 Optimize All Routes</button>
-          <div class="solve-caption">Pre-plan: full solve with all available trucks · 34 stops</div>
+        <!-- What's already there note -->
+        <div style="background:#f4f0ff;border-left:3px solid #7c4dff;border-radius:0 6px 6px 0;padding:10px 14px;font-size:11px;color:#4a2080;line-height:1.6;">
+          <strong>What the app already has toward day-of:</strong><br>
+          ✓ Save Plan / Load Plan (JSON) — sidebar buttons<br>
+          ✓ ⇄ Move stop between trucks — in each route card<br>
+          ✓ Drag reorder stops within a truck<br>
+          ✗ Load saved plan then re-solve with same trucks locked<br>
+          ✗ "Day-Of" session state flag to skip truck-open cost
         </div>
 
       </div>
@@ -1420,10 +1421,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-s
   </div>
 
   <div class="note">
-    <strong>Backend:</strong> <code>planning_mode</code> in <code>st.session_state</code> — values <code>"weekly"</code> or <code>"day_of"</code>.<br>
-    <strong>Weekly mode:</strong> full <code>solve(orders, trucks)</code> — all trucks eligible, optimizer can open any.<br>
-    <strong>Day-of mode:</strong> trucks already assigned; only re-sequence stops. Disable Add/Remove truck buttons in sidebar. Pass <code>fixed_vehicle_assignments=True</code> to solver (not yet implemented — stub the flag).<br>
-    <strong>Georgia plant defaults:</strong> distribution = weekly, builder = morning-of. Other plants may use weekly for everything, or only have one workflow. Configurable via <code>config.yaml → routing.default_planning_mode</code>.
+    <strong>Day-of implementation plan (when ready):</strong> Load JSON plan → <code>st.session_state.orders</code> + <code>assignments</code> restored → user edits order list (add/remove) → solve with <code>allowed_vehicles</code> fixed to loaded truck set only — same <code>SetAllowedVehiclesForIndex</code> mechanism used for truck-type restrictions, just applied globally. Trucks can still swap via the manual ⇄ button (already live). No new optimizer flag needed; just limit which trucks are passed to <code>solve()</code>.<br>
+    <strong>Georgia workflow:</strong> Distribution pre-planned week-before. Builders morning-of. Both use the same app flow — just load a different saved file. No separate mode UI needed until Joseph asks for it.
   </div>
 
   <div class="nav">

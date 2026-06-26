@@ -284,13 +284,13 @@
     <div class="tab-btn">Analysis</div>
   </div>
   <div class="content">
-    <div class="step-label">Step 2 of 6 — Auto-Geocoding (UX Decision Point)</div>
-    <p style="font-size:13px;color:#555;margin-bottom:14px;">Two options for where geocoding lives in the flow. Pick one before implementing.</p>
+    <div class="step-label">Step 2 of 6 — Auto-Geocoding (Decided: Option B)</div>
+    <p style="font-size:13px;color:#555;margin-bottom:14px;"><strong style="color:#2e7d32;">✓ Decided and implemented — Option B.</strong> Jump to Load Plan tab immediately after import, geocode + auto-solve run there with a single spinner. Add Orders tab never shows a geocoding delay.</p>
 
     <div class="decision-split">
       <!-- Option A: geocode on Add Orders tab -->
       <div class="decision-opt">
-        <span class="decision-badge badge-gray">Option A — Current</span>
+        <span class="decision-badge badge-gray" style="text-decoration:line-through;opacity:.5;">Option A — Rejected</span>
         <div class="decision-title">Geocode on Add Orders tab<br>before jumping to Load Plan</div>
         <div class="decision-body">
           Spinner shows on Add Orders tab. After geocoding completes, page jumps to Load Plan and auto-solve fires.
@@ -371,8 +371,8 @@
       <div class="radio-opt">
         <div class="radio-dot"></div>
         <div>
-          <div class="radio-label">Two-Phase: Distribution first, then Builders</div>
-          <div class="radio-sub">Phase 1 — lock trailer routes (lumber yards, building supply). Phase 2 — slot builder stops (straight trucks, residential) around committed routes. Matches supervisor's evening-before / 4am workflow.</div>
+          <div class="radio-label">Distribution / Builder Split</div>
+          <div class="radio-sub">Distribution stops (trailers — lumber yards, building supply) weighted ahead of builder stops (straight trucks — residential). Sequential solve, unlocked — both groups optimize together with distribution priority. Sidebar toggle for strict lock-first mode.</div>
         </div>
       </div>
     </div>
