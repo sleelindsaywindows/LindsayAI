@@ -1691,23 +1691,174 @@ def render_load_plan(cfg: dict):
             f"Dispatch overnight or schedule as a separate next-day run.</span></div>",
             unsafe_allow_html=True,
         )
-        for _md_v in _md_asgn_list:
+        from streamlit_sortables import sort_items as _sort_items
+        for _md_idx, _md_v in enumerate(_md_asgn_list):
             _md_dist = f" · {_md_v.route_distance_miles:.0f} mi" if _md_v.route_distance_miles else ""
             _md_time = f" · ~{getattr(_md_v,'route_time_hours',0.0):.1f} hr" if getattr(_md_v,'route_time_hours',0.0) else ""
+            _md_driver = getattr(_md_v.truck, "driver", "") or ""
+            _md_driver_str = f" · {_md_driver}" if _md_driver else ""
+            _md_exp_icon = "🚚" if _md_v.truck.truck_type == "trailer" else "🚛"
             _md_label = (
-                f"🌙 OVERNIGHT — {_md_v.truck.name} — "
+                f"🌙 {_md_exp_icon} {_md_v.truck.name}{_md_driver_str} — "
                 f"{_md_v.total_capacity_used:.0f}/{_md_v.truck.max_capacity:.0f} {abbr} "
-                f"({_md_v.utilization_pct:.0f}%){_md_dist}{_md_time}"
+                f"({_md_v.utilization_pct:.0f}% utilized){_md_dist}{_md_time}"
             )
             with st.expander(_md_label, expanded=True):
-                for _md_s in _md_v.stops:
-                    _md_o = _md_s.order
-                    st.markdown(
-                        f"**{_md_s.stop_number}.** {_md_o.customer_name}  \n"
-                        f"<span style='font-size:12px;color:#555;'>{_md_o.address}</span>  \n"
-                        f"<span style='font-size:11px;color:#888;'>{_md_o.capacity_units:.0f} {abbr}</span>",
-                        unsafe_allow_html=True,
+                # ── Inline driver name assignment ──
+                _md_d_col, _md_save_col, _ = st.columns([2, 1, 4])
+                _md_new_driver = _md_d_col.text_input(
+                    "Driver", value=_md_driver, key=f"md_driver_input_{_md_idx}",
+                    placeholder="Assign driver name",
+                    label_visibility="collapsed",
+                )
+                if _md_save_col.button("Assign", key=f"md_driver_save_{_md_idx}", use_container_width=True):
+                    _md_truck_cfg = next(
+                        (t for t in cfg["trucks"] if t["name"] == _md_v.truck.name), None
                     )
+                    if _md_truck_cfg is not None:
+                        _md_truck_cfg["driver"] = _md_new_driver
+                        save_config(cfg)
+                        _md_v.truck.driver = _md_new_driver
+                        st.rerun()
+
+                _md_c1, _md_c2 = st.columns(2)
+                with _md_c1:
+                    st.markdown("**Delivery Sequence** — drag ⠿ to reorder · ⇄ to move truck")
+
+                    # Draggable reorder
+                    _md_sort_labels_orig = [
+                        f"{stop.order.order_id}||{stop.stop_number}. {stop.order.customer_name}"
+                        for stop in _md_v.stops
+                    ]
+                    _md_sorted_labels = _sort_items(_md_sort_labels_orig, key=f"md_sort_{_md_idx}")
+                    if _md_sorted_labels != _md_sort_labels_orig:
+                        _md_new_ids = [lbl.split("||")[0] for lbl in _md_sorted_labels]
+                        _md_id_to_stop = {s.order.order_id: s for s in _md_asgn_list[_md_idx].stops}
+                        _md_asgn_list[_md_idx].stops = [_md_id_to_stop[oid] for oid in _md_new_ids if oid in _md_id_to_stop]
+                        for _md_n, _md_stp in enumerate(_md_asgn_list[_md_idx].stops, 1):
+                            _md_stp.stop_number = _md_n
+                        _md_spd = straight_speed_mph if _md_asgn_list[_md_idx].truck.truck_type == "straight" else trailer_speed_mph
+                        _md_asgn_list[_md_idx].route_time_hours = (
+                            (_md_asgn_list[_md_idx].route_distance_miles / _md_spd if _md_asgn_list[_md_idx].route_distance_miles else 0.0)
+                            + len(_md_asgn_list[_md_idx].stops) * stop_time_minutes / 60
+                        )
+                        st.session_state.multiday_assignments = _md_asgn_list
+                        st.rerun()
+
+                    # Per-stop detail + cross-truck move
+                    for _md_s_idx, _md_s in enumerate(_md_v.stops):
+                        _md_o = _md_s.order
+                        _md_fv_ids = getattr(_md_o, "fenevision_ids", None)
+                        _md_is_builder = bool(_md_o.allowed_truck_types and
+                                              set(_md_o.allowed_truck_types) == {"straight"})
+                        _md_info_col, _md_move_col, _md_chk_col = st.columns([7, 2.5, 1])
+                        with _md_move_col:
+                            if len(_md_asgn_list) > 1:
+                                _md_other_opts = {
+                                    f"{a.truck.name}{' · ' + a.truck.driver if a.truck.driver else ''}": i
+                                    for i, a in enumerate(_md_asgn_list) if i != _md_idx
+                                }
+                                _md_dest_label = st.selectbox(
+                                    "→",
+                                    options=list(_md_other_opts.keys()),
+                                    key=f"md_mv_dest_{_md_idx}_{_md_s_idx}",
+                                    label_visibility="collapsed",
+                                )
+                                if st.button("⇄ Move", key=f"md_mv_truck_{_md_idx}_{_md_s_idx}",
+                                             use_container_width=True, help="Move to selected truck"):
+                                    _md_dest_idx = _md_other_opts[_md_dest_label]
+                                    _md_moving = _md_asgn_list[_md_idx].stops.pop(_md_s_idx)
+                                    _md_asgn_list[_md_dest_idx].stops.append(_md_moving)
+                                    for _md_n, _md_stp in enumerate(_md_asgn_list[_md_idx].stops, 1):
+                                        _md_stp.stop_number = _md_n
+                                    for _md_n, _md_stp in enumerate(_md_asgn_list[_md_dest_idx].stops, 1):
+                                        _md_stp.stop_number = _md_n
+                                    for _md_ti in [_md_idx, _md_dest_idx]:
+                                        _md_spd = straight_speed_mph if _md_asgn_list[_md_ti].truck.truck_type == "straight" else trailer_speed_mph
+                                        _md_asgn_list[_md_ti].route_time_hours = (
+                                            (_md_asgn_list[_md_ti].route_distance_miles / _md_spd if _md_asgn_list[_md_ti].route_distance_miles else 0.0)
+                                            + len(_md_asgn_list[_md_ti].stops) * stop_time_minutes / 60
+                                        )
+                                    st.session_state.multiday_assignments = [a for a in _md_asgn_list if a.stops]
+                                    st.rerun()
+                        with _md_info_col:
+                            _md_truck_tag = (
+                                "<span style='font-size:9px;background:#f0f4f8;color:#555;"
+                                "border-radius:8px;padding:1px 6px;font-weight:600;"
+                                "margin-left:5px;vertical-align:middle;'>26ft only</span>"
+                                if _md_is_builder else ""
+                            )
+                            _md_fv_line = (
+                                f"<div style='font-size:10px;color:#1a7cb8;font-family:monospace;"
+                                f"background:#eef4fb;display:inline-block;border-radius:3px;"
+                                f"padding:1px 5px;margin-top:2px;'>{_html_mod.escape(str(_md_fv_ids))}</div>"
+                                if _md_fv_ids else ""
+                            )
+                            _md_pri_tag = (
+                                f"<span style='background:#d32f2f;color:#fff;font-size:9px;"
+                                f"padding:1px 5px;border-radius:3px;margin-left:5px;'>P{_md_o.priority}</span>"
+                                if _md_o.priority > 0 else ""
+                            )
+                            _md_rname = getattr(_md_o, "route_name", None)
+                            _md_route_tag = (
+                                f"<span style='font-size:9px;background:#f0f4f8;color:#9c27b0;"
+                                f"border-radius:8px;padding:1px 7px;font-weight:700;"
+                                f"margin-left:5px;vertical-align:middle;border:1px solid #e1bee7;'>"
+                                f"{_html_mod.escape(_md_rname)}</span>"
+                                if _md_rname else ""
+                            )
+                            st.markdown(
+                                f"<span style='font-size:13px;color:#bbb;margin-right:4px;'>⠿</span>"
+                                f"<span style='display:inline-block;width:20px;height:20px;"
+                                f"border-radius:50%;background:#9c27b0;color:#fff;"
+                                f"font-size:10px;font-weight:800;text-align:center;line-height:20px;"
+                                f"margin-right:5px;vertical-align:middle;'>{_md_s.stop_number}</span>"
+                                f"**{_html_mod.escape(_md_o.customer_name)}**{_md_truck_tag}{_md_pri_tag}  \n"
+                                f"<span style='color:gray;font-size:0.85em'>{_html_mod.escape(_md_o.address)}</span>"
+                                f"{_md_route_tag}  \n"
+                                f"{_md_fv_line}",
+                                unsafe_allow_html=True,
+                            )
+                            if _md_o.notes:
+                                st.caption(f"  Note: {_md_o.notes}")
+                            _md_line_items = getattr(_md_o, "line_items", None)
+                            if _md_line_items:
+                                _md_prefer_cols = ["OrderNumber", "Width", "Height", "PartNo",
+                                                   "sqftShippedQty", "Qty", "shpQty", "ShipQty", "Quantity"]
+                                _md_show_cols = [c for c in _md_prefer_cols if any(c in item for item in _md_line_items)]
+                                if _md_show_cols:
+                                    _md_col_labels = {c: ("Sq Ft" if c == "sqftShippedQty" else c) for c in _md_show_cols}
+                                    with st.expander(f"📋 {len(_md_line_items)} line items", expanded=False):
+                                        _md_item_rows = [{_md_col_labels[c]: item.get(c, "") for c in _md_show_cols} for item in _md_line_items]
+                                        st.dataframe(
+                                            pd.DataFrame(_md_item_rows),
+                                            use_container_width=True,
+                                            hide_index=True,
+                                        )
+                        with _md_chk_col:
+                            st.checkbox(
+                                "✓",
+                                key=f"md_confirmed_{_md_idx}_{_md_o.order_id}",
+                                help="Mark stop as confirmed",
+                            )
+                with _md_c2:
+                    st.markdown("**Load Sequence** *(load #1 first — loads deepest into truck)*")
+                    for _md_li, _md_ls in enumerate(_md_v.load_sequence, 1):
+                        _md_ls_rname = getattr(_md_ls.order, "route_name", None)
+                        _md_ls_route_pill = (
+                            f'<span style="font-size:12px;font-weight:700;color:#9c27b0;background:#f3e5f5;'
+                            f'border:1px solid #e1bee7;border-radius:10px;padding:2px 9px;">{_html_mod.escape(_md_ls_rname)}</span>'
+                            if _md_ls_rname else ""
+                        )
+                        st.markdown(
+                            f'<div style="padding:6px 0;border-bottom:1px solid #f0f4f8;display:flex;align-items:center;gap:8px;">'
+                            f'<span style="font-size:13px;font-weight:800;color:#555;min-width:60px;">Load {_md_li}.</span>'
+                            f'<span style="flex:1;font-size:14px;font-weight:700;color:#1a1a2e;">{_html_mod.escape(_md_ls.order.customer_name)}</span>'
+                            f'{_md_ls_route_pill}'
+                            f'<span style="font-size:12px;color:#888;min-width:60px;text-align:right;">{_md_ls.order.capacity_units:.0f} {_html_mod.escape(abbr)}</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
         if _md_drp_list:
             st.warning(f"{len(_md_drp_list)} multi-day stop(s) still couldn't be assigned: "
                        + ", ".join(o.order_id for o in _md_drp_list))
