@@ -67,8 +67,24 @@ trucks:
   cost_per_mile: 1.75
   employment_type: fulltime
   active: true
+- name: 26ft Straight
+  driver: ''
+  type: straight
+  max_capacity: 208.0
+  fixed_cost: 5.0
+  cost_per_mile: 1.75
+  employment_type: fulltime
+  active: true
+- name: '53ft Trailer #10'
+  driver: ''
+  type: trailer
+  max_capacity: 431.06
+  fixed_cost: 8.0
+  cost_per_mile: 2.1
+  employment_type: fulltime
+  active: true
 depot:
-  name: "Lindsay Windows \u2014 Georgia Plant"
+  name: "Lindsay Windows — Georgia Plant"
   address: ''
 routing:
   max_route_hours: 9.0
@@ -81,3 +97,5 @@ routing:
   exclude_route_patterns:
   - Lindsay MO
   min_sqft_threshold: 5.0
+  osrm_server: ''
+  two_phase_ordered: false

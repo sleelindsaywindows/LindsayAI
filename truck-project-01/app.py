@@ -1,4 +1,6 @@
 import copy
+import html as _html_mod
+import math
 import os
 import time
 import yaml
@@ -12,7 +14,7 @@ load_dotenv()
 import datetime
 from src.models import Order, Truck
 from src.parser import parse_and_verify
-from src.import_fenevision import import_fenevision_xlsx
+from src.import_fenevision import import_fenevision_xlsx, parse_route_truck_summary
 from src.export_html import generate_html_routes
 from src.optimizer import (
     solve,
@@ -100,6 +102,10 @@ def init_state():
         "first_visit": True,     # drives one-time onboarding modal
         "onboarding_slide": 0,
         "_ob_navigating": False, # True only when a slide nav button was just clicked
+        "routing_phase": None,   # None | "distribution_done" — tracks two-phase solve progress
+        "auto_geocode_pending": False,   # set on xlsx import; consumed in render_load_plan before auto-solve
+        "multiday_assignments": [],      # separate solve result for overnight/long-haul stops
+        "multiday_dropped": [],
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -229,10 +235,12 @@ header[data-testid="stHeader"] * { color: #fff !important; }
     opacity: 1 !important;
 }
 
-/* Sidebar → FeneVision BI orange */
+/* Sidebar → white with Lindsay blue left accent */
 section[data-testid="stSidebar"] {
-    background: #F58220 !important;
-    border-right: 1px solid #d9701a !important;
+    background: #fff !important;
+    border-right: none !important;
+    border-left: 4px solid #1a7cb8 !important;
+    box-shadow: 2px 0 8px rgba(26,124,184,0.08) !important;
 }
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] p,
@@ -282,6 +290,75 @@ div[data-testid="stInfo"] {
     border-left: 4px solid #1a7cb8 !important;
     background: #deeef9 !important;
 }
+
+/* Sidebar sliders — blue track + thumb on white background */
+section[data-testid="stSidebar"] [data-testid="stSlider"] div[data-baseweb="slider"] > div:first-child {
+    background: #dde3ea !important;
+}
+section[data-testid="stSidebar"] [data-testid="stSlider"] div[data-baseweb="slider"] div[role="slider"] {
+    background: #1a7cb8 !important;
+    border: 2px solid #1a7cb8 !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15) !important;
+}
+section[data-testid="stSidebar"] [data-testid="stSlider"] div[data-baseweb="slider"] div[class*="Track"] {
+    background: #1a7cb8 !important;
+}
+section[data-testid="stSidebar"] [data-testid="stSlider"] div[data-baseweb="slider"] div[class*="Tick"] span {
+    color: #555 !important;
+}
+
+/* Primary solve/action button — orange, prominent */
+button[data-testid="baseButton-primary"] {
+    background: #F58220 !important;
+    border: none !important;
+    font-weight: 800 !important;
+    font-size: 15px !important;
+    padding: 12px 32px !important;
+    border-radius: 8px !important;
+    box-shadow: 0 4px 14px rgba(245,130,32,0.30) !important;
+}
+button[data-testid="baseButton-primary"]:hover {
+    background: #d96e10 !important;
+    box-shadow: 0 6px 18px rgba(245,130,32,0.40) !important;
+}
+
+/* Mode radio → pill style */
+div[data-testid="stRadio"] > div {
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+}
+div[data-testid="stRadio"] label {
+    background: #fff !important;
+    border: 2px solid #dde3ea !important;
+    border-radius: 50px !important;
+    padding: 7px 18px !important;
+    font-weight: 700 !important;
+    color: #555 !important;
+    cursor: pointer !important;
+}
+div[data-testid="stRadio"] label:has(input:checked) {
+    background: #1a7cb8 !important;
+    border-color: #1a7cb8 !important;
+    color: #fff !important;
+}
+div[data-testid="stRadio"] input { display: none !important; }
+
+/* Route expander cards — shadow + border-radius */
+details[data-testid="stExpander"] {
+    border-radius: 10px !important;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.09) !important;
+    border: 1px solid #edf0f4 !important;
+    overflow: hidden !important;
+    margin-bottom: 10px !important;
+}
+details[data-testid="stExpander"] summary {
+    font-weight: 700 !important;
+    color: #1a1a2e !important;
+    font-size: 15px !important;
+}
+details[data-testid="stExpander"] summary p:first-child::first-letter {
+    font-size: 22px !important;
+}
 </style>
 """
 
@@ -290,162 +367,247 @@ def _inject_lindsay_css() -> None:
     st.markdown(_LINDSAY_CSS, unsafe_allow_html=True)
 
 
+def _sb_section(label: str, right: str = "") -> None:
+    right_html = f"<span style='margin-left:auto;font-size:11px;color:#888;font-weight:700;'>{right}</span>" if right else ""
+    st.sidebar.markdown(
+        f"<div style='font-size:11px;font-weight:800;letter-spacing:.8px;text-transform:uppercase;"
+        f"color:#1a7cb8;margin:14px 0 8px;display:flex;align-items:center;'>"
+        f"{label}{right_html}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def _sb_chip_row(label: str, value: str) -> None:
+    st.sidebar.markdown(
+        f"<div style='display:flex;align-items:center;justify-content:space-between;"
+        f"margin-bottom:7px;'>"
+        f"<span style='font-size:13px;color:#333;'>{label}</span>"
+        f"<span style='background:#f0f4f8;border-radius:5px;padding:3px 10px;"
+        f"font-size:12px;color:#1a1a2e;font-weight:700;'>{value}</span>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def render_sidebar(cfg: dict) -> dict:
-    st.sidebar.title("⚙️ Configuration")
+    # ── Logo ──
+    st.sidebar.markdown(
+        "<div style='padding:14px 0 14px;border-bottom:2px solid #eef2f7;"
+        "margin-bottom:2px;display:flex;gap:12px;align-items:center;'>"
+        "<div style='width:42px;height:42px;background:#1a7cb8;border-radius:8px;"
+        "display:flex;align-items:center;justify-content:center;"
+        "color:#fff;font-size:20px;font-weight:900;flex-shrink:0;'>L</div>"
+        "<div><div style='font-size:15px;font-weight:800;color:#1a1a2e;line-height:1.2;'>Lindsay Windows</div>"
+        "<div style='font-size:11px;color:#888;margin-top:2px;'>Load Planner · GA Plant</div></div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
 
-    st.sidebar.subheader("Measurement Unit")
-    unit = st.sidebar.text_input("Unit (internal key)", value=cfg["measurement"]["unit"])
-    label = st.sidebar.text_input("Display label", value=cfg["measurement"]["label"])
-    abbr = st.sidebar.text_input("Abbreviation", value=cfg["measurement"]["abbreviation"])
-
-    st.sidebar.subheader("Depot")
-    depot_name = st.sidebar.text_input("Warehouse name", value=cfg["depot"].get("name", ""))
-    depot_addr = st.sidebar.text_input("Warehouse address", value=cfg["depot"].get("address", ""))
-
-    st.sidebar.subheader("Routing")
     routing = cfg.get("routing", {})
-    max_hours = st.sidebar.number_input(
-        "Max route hours / driver",
-        value=float(routing.get("max_route_hours", 9.0)),
-        min_value=1.0, max_value=14.0, step=0.5,
-        help="Joseph's 9-hour cap (11 hrs is legal max; 9 gives a buffer). Includes drive + unload time.",
-    )
-    stop_time = st.sidebar.number_input(
-        "Unload time per stop (minutes)",
-        value=float(routing.get("stop_time_minutes", 45)),
-        min_value=5.0, max_value=180.0, step=5.0,
-        help="Average time to unload at each stop. 30–60 min for neighborhood deliveries without a dock.",
-    )
-    max_fill_pct = st.sidebar.slider(
-        "Max truck fill %",
-        min_value=50, max_value=100, step=5,
-        value=int(routing.get("max_fill_pct", 90)),
-        help="Optimizer won't fill trucks past this percentage. 90% leaves room for real-world loading variance.",
-    )
-    manual_truck_count = st.sidebar.number_input(
-        "Unoptimized route count (for comparison)",
-        value=int(routing.get("manual_truck_count", 13)),
-        min_value=1, step=1,
-        help="How many trucks the current unoptimized process used. Enter the number from Joseph's manual routing for the same day.",
-    )
+    abbr = cfg["measurement"]["abbreviation"]
+    unit = cfg["measurement"]["unit"]
+    label = cfg["measurement"]["label"]
+    depot_name = cfg["depot"].get("name", "")
+    depot_addr = cfg["depot"].get("address", "")
 
-    st.sidebar.subheader("Import Filters")
-    _default_patterns = "\n".join(routing.get("exclude_route_patterns", ["Lindsay MO"]))
-    exclude_patterns_raw = st.sidebar.text_area(
-        "Exclude routes (one pattern per line)",
-        value=_default_patterns,
-        height=80,
-        help="Routes whose name contains any of these strings (case-insensitive) are excluded on FeneVision import. "
-             "Use this to drop interplant transfers (e.g. 'Lindsay MO').",
-    )
-    min_sqft_sidebar = st.sidebar.number_input(
-        "Min stop size to import (sq ft)",
-        value=float(routing.get("min_sqft_threshold", 5.0)),
-        min_value=0.0, max_value=50.0, step=1.0,
-        help="Stops with sqftShippedQty below this are skipped on import. "
-             "Raises the floor above screen-only or placeholder stops (which often show as 1–2 sq ft).",
-    )
-
-    st.sidebar.subheader("Truck Fleet")
-    _h0, _h1, _h2, _h3, _h4, _ = st.sidebar.columns([2, 1.8, 1.2, 0.7, 0.7, 0.5])
-    _h0.caption("Driver")
-    _h1.caption("Size")
-    _h2.caption(f"Max ({abbr})")
-    _h3.caption("CT?")
-    _h4.caption("Use")
+    # ── Fleet ──
+    _active_trucks = [t for t in cfg["trucks"] if t.get("active", True)]
+    _total_cap = sum(t.get("max_capacity", 0) for t in _active_trucks)
+    _sb_section("Fleet — Today's Trucks", f"{_total_cap:.0f} sq ft total")
 
     updated_trucks = []
     _delete_triggered = False
     for i, truck in enumerate(cfg["trucks"]):
-        _c0, _c1, _c2, _c3, _c4, _c5 = st.sidebar.columns([2, 1.8, 1.2, 0.7, 0.7, 0.5])
-        driver = _c0.text_input("Driver", value=truck.get("driver", ""), key=f"t_driver_{i}",
-                                label_visibility="collapsed", placeholder="Driver")
-        name = _c1.text_input("Size", value=truck["name"], key=f"t_name_{i}", label_visibility="collapsed")
-        cap = _c2.number_input("Max", value=float(truck["max_capacity"]), key=f"t_cap_{i}",
-                               min_value=0.1, label_visibility="collapsed")
-        is_contract = _c3.checkbox("Contract", value=truck.get("employment_type", "fulltime") == "contract",
-                                   key=f"t_ct_{i}", label_visibility="collapsed",
-                                   help="Check if driver is a contractor (CT)")
-        active = _c4.checkbox("Active", value=bool(truck.get("active", True)), key=f"t_active_{i}",
-                              label_visibility="collapsed")
-        delete = _c5.button("✕", key=f"t_del_{i}", help="Remove this truck")
+        _icon = "🚚" if truck.get("type") == "trailer" else "🚛"
+        _is_trailer = truck.get("type") == "trailer"
+        _accent = "#F58220" if _is_trailer else "#1a7cb8"
+        # Single unified row: icon | name+driver | CT | ×
+        _cicon, _cinfo, _cct, _cdel = st.sidebar.columns([0.55, 4, 0.55, 0.55])
+        _cicon.markdown(
+            f"<div style='padding-top:20px;text-align:center;font-size:22px;'>{_icon}</div>",
+            unsafe_allow_html=True,
+        )
+        _cinfo.markdown(
+            f"<div style='font-size:11px;font-weight:800;color:#1a1a2e;margin-bottom:1px;"
+            f"border-left:3px solid {_accent};padding-left:6px;margin-top:4px;'>"
+            f"{truck['name']}"
+            f"<span style='font-size:10px;font-weight:600;color:#999;margin-left:5px;'>"
+            f"{truck.get('max_capacity',0):.0f} sq ft</span></div>",
+            unsafe_allow_html=True,
+        )
+        driver = _cinfo.text_input("Driver", value=truck.get("driver", ""), key=f"t_driver_{i}",
+                                   label_visibility="collapsed", placeholder="Driver name")
+        is_contract = _cct.checkbox("CT", value=truck.get("employment_type") == "contract",
+                                    key=f"t_ct_{i}", label_visibility="collapsed",
+                                    help="Contractor")
+        delete = _cdel.button("✕", key=f"t_del_{i}", help="Remove truck")
+        st.sidebar.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+        active = truck.get("active", True)
+        name = truck["name"]
+        cap = float(truck["max_capacity"])
         if delete:
             _delete_triggered = True
         else:
             updated_trucks.append({
-                "name": name,
-                "driver": driver,
-                "type": truck["type"],
-                "max_capacity": cap,
-                "fixed_cost": truck.get("fixed_cost", 5.0),
+                "name": name, "driver": driver, "type": truck["type"],
+                "max_capacity": cap, "fixed_cost": truck.get("fixed_cost", 5.0),
                 "cost_per_mile": truck.get("cost_per_mile", 0.0),
                 "employment_type": "contract" if is_contract else "fulltime",
                 "active": active,
             })
 
+    # Type-specific add buttons
+    st.sidebar.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+    _ba, _bb = st.sidebar.columns(2)
+    _add_straight = _ba.button("＋ 26ft Straight", use_container_width=True, help="Add 26ft straight truck")
+    _add_trailer  = _bb.button("＋ 53ft Trailer",  use_container_width=True, help="Add 53ft trailer")
+
+    # ── Routing Config chips ──
+    max_hours      = float(routing.get("max_route_hours", 9.0))
+    stop_time      = float(routing.get("stop_time_minutes", 45))
+    max_fill_pct   = int(routing.get("max_fill_pct", 90))
+    straight_speed = int(routing.get("straight_speed_mph", 47))
+    trailer_speed  = int(routing.get("trailer_speed_mph", 40))
+    manual_truck_count = int(routing.get("manual_truck_count", 13))
+    min_sqft_sidebar   = float(routing.get("min_sqft_threshold", 5.0))
+    exclude_patterns_raw = "\n".join(routing.get("exclude_route_patterns", ["Lindsay MO"]))
+    solver_time_limit = int(routing.get("solver_time_limit_seconds", 15))
+    osrm_server = routing.get("osrm_server", "")
+    two_phase_ordered_cfg = bool(routing.get("two_phase_ordered", False))
+
+    _sb_section("Routing Config")
+    _sb_chip_row("Max route hrs", f"{max_hours:.1f} hr")
+    _sb_chip_row("Stop time", f"{int(stop_time)} min")
+    _sb_chip_row("Straight speed", f"{straight_speed} mph")
+    _sb_chip_row("Trailer speed", f"{trailer_speed} mph")
+    _sb_chip_row("Max fill", f"{max_fill_pct}%")
+    if depot_name:
+        _sb_chip_row("Depot", depot_name)
+
+    with st.sidebar.expander("✏️ Edit Routing Config", expanded=False):
+        max_hours = st.number_input("Max route hrs / driver", value=max_hours,
+                                    min_value=1.0, max_value=14.0, step=0.5,
+                                    help="9 hr cap = drive + unload time.")
+        stop_time = st.number_input("Stop time (minutes)", value=stop_time,
+                                    min_value=5.0, max_value=180.0, step=5.0)
+        max_fill_pct = st.slider("Max fill %", 50, 100, max_fill_pct, step=5)
+        straight_speed = st.number_input("Straight speed (mph)", value=float(straight_speed),
+                                         min_value=10.0, max_value=80.0, step=1.0)
+        trailer_speed = st.number_input("Trailer speed (mph)", value=float(trailer_speed),
+                                        min_value=10.0, max_value=80.0, step=1.0)
+        manual_truck_count = st.number_input("Manual route count (for comparison)",
+                                             value=float(manual_truck_count), min_value=1.0, step=1.0)
+        depot_name = st.text_input("Depot name", value=depot_name)
+        depot_addr = st.text_input("Depot address", value=depot_addr)
+        two_phase_ordered_cfg = st.checkbox(
+            "Lock distribution routes first",
+            value=two_phase_ordered_cfg,
+            key="two_phase_ordered_cb",
+            help=(
+                "When checked, distribution routes are locked before builder routes solve. "
+                "Uncheck for independent solves."
+            ),
+        )
+
+    with st.sidebar.expander("🔍 Import Filters", expanded=False):
+        min_sqft_sidebar = st.number_input("Min stop size (sq ft)", value=min_sqft_sidebar,
+                                           min_value=0.0, max_value=50.0, step=1.0,
+                                           help="Stops below this sq ft are skipped on import.")
+        exclude_patterns_raw = st.text_area("Exclude route patterns (one per line)",
+                                            value=exclude_patterns_raw, height=70,
+                                            help="Case-insensitive substring match on RouteName.")
+
+    def _build_cfg(trucks_list):
+        return {
+            "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
+            "trucks": trucks_list,
+            "depot": {"name": depot_name, "address": depot_addr},
+            "routing": {
+                "max_route_hours": max_hours,
+                "stop_time_minutes": stop_time,
+                "max_fill_pct": max_fill_pct,
+                "manual_truck_count": int(manual_truck_count),
+                "straight_speed_mph": int(straight_speed),
+                "trailer_speed_mph": int(trailer_speed),
+                "solver_time_limit_seconds": solver_time_limit,
+                "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
+                "min_sqft_threshold": min_sqft_sidebar,
+                "osrm_server": osrm_server,
+                "two_phase_ordered": two_phase_ordered_cfg,
+            },
+        }
+
     if _delete_triggered:
-        _save_cfg = {
-            "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
-            "trucks": updated_trucks,
-            "depot": {"name": depot_name, "address": depot_addr},
-            "routing": {
-                "max_route_hours": max_hours,
-                "stop_time_minutes": stop_time,
-                "max_fill_pct": max_fill_pct,
-                "manual_truck_count": manual_truck_count,
-                "straight_speed_mph": routing.get("straight_speed_mph", 47),
-                "trailer_speed_mph": routing.get("trailer_speed_mph", 40),
-                "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
-                "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
-                "min_sqft_threshold": min_sqft_sidebar,
-                "osrm_server": routing.get("osrm_server", ""),
-            },
-        }
-        save_config(_save_cfg)
+        save_config(_build_cfg(updated_trucks))
         st.rerun()
 
-    if st.sidebar.button("＋ Add Truck"):
-        new_cfg = {
-            "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
-            "trucks": updated_trucks + [{"name": "26ft Straight", "driver": "", "type": "straight", "max_capacity": 208.0, "fixed_cost": 5.0, "cost_per_mile": 1.75, "employment_type": "fulltime", "active": True}],
-            "depot": {"name": depot_name, "address": depot_addr},
-            "routing": {
-                "max_route_hours": max_hours,
-                "stop_time_minutes": stop_time,
-                "max_fill_pct": max_fill_pct,
-                "manual_truck_count": manual_truck_count,
-                "straight_speed_mph": routing.get("straight_speed_mph", 47),
-                "trailer_speed_mph": routing.get("trailer_speed_mph", 40),
-                "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
-                "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
-                "min_sqft_threshold": min_sqft_sidebar,
-                "osrm_server": routing.get("osrm_server", ""),
-            },
-        }
-        save_config(new_cfg)
+    if _add_straight:
+        n = len(updated_trucks) + 1
+        save_config(_build_cfg(updated_trucks + [{
+            "name": f"26ft Straight #{n}", "driver": "", "type": "straight",
+            "max_capacity": 208.0, "fixed_cost": 5.0, "cost_per_mile": 1.75,
+            "employment_type": "fulltime", "active": True,
+        }]))
         st.rerun()
 
-    if st.sidebar.button("Save Config", type="primary"):
-        new_cfg = {
-            "measurement": {"unit": unit, "label": label, "abbreviation": abbr},
-            "trucks": updated_trucks,
-            "depot": {"name": depot_name, "address": depot_addr},
-            "routing": {
-                "max_route_hours": max_hours,
-                "stop_time_minutes": stop_time,
-                "max_fill_pct": max_fill_pct,
-                "manual_truck_count": manual_truck_count,
-                "straight_speed_mph": routing.get("straight_speed_mph", 47),
-                "trailer_speed_mph": routing.get("trailer_speed_mph", 40),
-                "solver_time_limit_seconds": routing.get("solver_time_limit_seconds", 15),
-                "exclude_route_patterns": [p.strip() for p in exclude_patterns_raw.splitlines() if p.strip()],
-                "min_sqft_threshold": min_sqft_sidebar,
-                "osrm_server": routing.get("osrm_server", ""),
-            },
-        }
-        save_config(new_cfg)
+    if _add_trailer:
+        n = len(updated_trucks) + 1
+        save_config(_build_cfg(updated_trucks + [{
+            "name": f"53ft Trailer #{n}", "driver": "", "type": "trailer",
+            "max_capacity": 431.06, "fixed_cost": 8.0, "cost_per_mile": 2.10,
+            "employment_type": "fulltime", "active": True,
+        }]))
+        st.rerun()
+
+    if st.sidebar.button("💾 Save Config", use_container_width=True):
+        save_config(_build_cfg(updated_trucks))
         st.sidebar.success("Saved.")
         st.rerun()
+
+    # ── Session persistence ──
+    st.sidebar.divider()
+    st.sidebar.markdown(
+        "<div style='font-size:9px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;"
+        "color:#1a7cb8;margin-bottom:6px;'>Save / Load Plan</div>",
+        unsafe_allow_html=True,
+    )
+    from src.persistence import serialize_plan, deserialize_plan
+
+    if st.session_state.get("assignments"):
+        _plan_bytes = serialize_plan(
+            orders=st.session_state.get("orders", []),
+            assignments=st.session_state.assignments,
+            dropped=st.session_state.get("dropped", []),
+            supervisor_routes=st.session_state.get("supervisor_routes", []),
+            fv_filename=st.session_state.get("fv_filename", ""),
+        )
+        st.sidebar.download_button(
+            "⬇ Save plan",
+            data=_plan_bytes,
+            file_name="lindsay_plan.json",
+            mime="application/json",
+            use_container_width=True,
+            key="save_plan_btn",
+        )
+    else:
+        st.sidebar.caption("Optimize a plan to enable Save.")
+
+    _plan_upload = st.sidebar.file_uploader(
+        "Load saved plan (.json)", type=["json"], key="plan_upload", label_visibility="collapsed"
+    )
+    if _plan_upload is not None:
+        try:
+            _orders, _asgn, _dropped, _sup_routes, _fv_fn = deserialize_plan(_plan_upload.read())
+            st.session_state.orders = _orders
+            st.session_state.assignments = _asgn
+            st.session_state.dropped = _dropped
+            st.session_state.supervisor_routes = _sup_routes
+            if _fv_fn:
+                st.session_state.fv_filename = _fv_fn
+            st.sidebar.success(f"Plan restored — {len(_asgn)} truck(s), {len(_orders)} order(s).")
+            st.rerun()
+        except ValueError as e:
+            st.sidebar.error(str(e))
 
     st.sidebar.divider()
     if st.sidebar.button("Need Help?", key="sidebar_help", use_container_width=True):
@@ -460,129 +622,156 @@ def render_add_orders(cfg: dict):
     abbr = cfg["measurement"]["abbreviation"]
     unit_label = cfg["measurement"]["label"]
 
-    st.subheader("Import from FeneVision")
-    st.caption("Upload the xlsx export from FeneVision (GA Trucks format — 'Orders by Route' sheet).")
-    fv_file = st.file_uploader(
-        "Choose FeneVision xlsx",
-        type=["xlsx"],
-        key=f"fv_uploader_{st.session_state.uploader_key}",
-        label_visibility="collapsed",
-    )
-    if fv_file is not None:
-        _routing_cfg = cfg.get("routing", {})
-        exclude_patterns = _routing_cfg.get("exclude_route_patterns", ["Lindsay MO"])
-        min_sqft_import = float(_routing_cfg.get("min_sqft_threshold", 5.0))
+    col_primary, col_secondary = st.columns([1.1, 1])
 
-        # Auto-detect sheet name: try default, then let user pick if not found.
-        import openpyxl
-        _wb = openpyxl.load_workbook(fv_file, read_only=True, data_only=True)
-        _sheet_names = _wb.sheetnames
-        _wb.close()
-        fv_file.seek(0)  # reset after openpyxl read
+    # ── Left: FeneVision primary import ──
+    with col_primary:
+        st.markdown(
+            "<div style='font-size:11px;font-weight:800;text-transform:uppercase;"
+            "letter-spacing:.7px;color:#1a7cb8;margin-bottom:4px;'>📊 FeneVision Export</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption("GA Trucks .xlsx — 'Orders by Route' sheet. Aggregates line items → stops automatically.")
+        fv_file = st.file_uploader(
+            "Choose FeneVision xlsx",
+            type=["xlsx"],
+            key=f"fv_uploader_{st.session_state.uploader_key}",
+            label_visibility="collapsed",
+        )
+        if fv_file is not None:
+            _routing_cfg = cfg.get("routing", {})
+            exclude_patterns = _routing_cfg.get("exclude_route_patterns", ["Lindsay MO"])
+            min_sqft_import = float(_routing_cfg.get("min_sqft_threshold", 5.0))
 
-        _DEFAULT_SHEET = "Orders by Route"
-        _sheet_candidates = [s for s in _sheet_names if "order" in s.lower() or "route" in s.lower()]
-        if _DEFAULT_SHEET in _sheet_names:
-            _chosen_sheet = _DEFAULT_SHEET
-        elif len(_sheet_candidates) == 1:
-            _chosen_sheet = _sheet_candidates[0]
-        else:
-            _chosen_sheet = st.selectbox(
-                f"Sheet not found: '{_DEFAULT_SHEET}'. Pick the orders sheet:",
-                options=_sheet_names,
-                index=0,
-                key="fv_sheet_picker",
-            )
-            if not st.button("Load selected sheet", key="fv_sheet_confirm"):
-                st.stop()
+            import openpyxl
+            _wb = openpyxl.load_workbook(fv_file, read_only=True, data_only=True)
+            _sheet_names = _wb.sheetnames
+            _wb.close()
+            fv_file.seek(0)
 
-        try:
-            with st.spinner("Reading FeneVision file…"):
-                new_orders, skipped, excluded = import_fenevision_xlsx(
-                    fv_file,
-                    sheet_name=_chosen_sheet,
-                    exclude_route_patterns=exclude_patterns,
-                    min_sqft=min_sqft_import,
+            _DEFAULT_SHEET = "Orders by Route"
+            _sheet_candidates = [s for s in _sheet_names if "order" in s.lower() or "route" in s.lower()]
+            if _DEFAULT_SHEET in _sheet_names:
+                _chosen_sheet = _DEFAULT_SHEET
+            elif len(_sheet_candidates) == 1:
+                _chosen_sheet = _sheet_candidates[0]
+            else:
+                _chosen_sheet = st.selectbox(
+                    f"Sheet not found: '{_DEFAULT_SHEET}'. Pick the orders sheet:",
+                    options=_sheet_names,
+                    index=0,
+                    key="fv_sheet_picker",
                 )
-        except Exception as e:
-            st.error(f"Could not read FeneVision file: {e}")
-        else:
-            st.session_state.orders = new_orders
-            st.session_state.assignments = []
-            st.session_state.dropped = []
-            st.session_state.uploader_key += 1
-            st.session_state.auto_run_pending = True
-            st.session_state.fv_filename = fv_file.name
-            st.session_state._jump_plan = True
-            msg = f"✅ {len(new_orders)} stops loaded"
-            if excluded:
-                msg += f" · {len(excluded)} interplant route(s) excluded"
-            if skipped:
-                msg += f" · {len(skipped)} placeholder stop(s) skipped"
-            msg += " — heading to Load Plan to optimize…"
-            st.success(msg)
-            st.rerun()
+                if not st.button("Load selected sheet", key="fv_sheet_confirm"):
+                    st.stop()
 
-    st.divider()
-    st.subheader("Upload CSV")
-    st.caption(
-        f"Required columns: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})  "
-        f"— optional: `priority`, `notes`"
-    )
-    uploaded = st.file_uploader(
-        "Choose file", type=["csv"],
-        key=f"uploader_{st.session_state.uploader_key}",
-        label_visibility="collapsed",
-    )
-    if uploaded:
-        df = pd.read_csv(uploaded)
-        required = {"order_id", "customer_name", "address", "capacity_units"}
-        missing = required - set(df.columns)
-        if missing:
-            st.error(f"CSV missing columns: {missing}")
-        else:
-            new_orders = [
-                Order(
-                    order_id=str(row["order_id"]),
-                    customer_name=str(row["customer_name"]),
-                    address=str(row["address"]),
-                    capacity_units=float(row["capacity_units"]),
-                    priority=0 if pd.isna(row.get("priority", 0)) else int(row.get("priority", 0)),
-                    notes="" if pd.isna(row.get("notes", "")) else str(row.get("notes", "")),
-                )
-                for _, row in df.iterrows()
-            ]
-            st.session_state.orders.extend(new_orders)
-            st.session_state.assignments = []
-            st.session_state.dropped = []
-            st.session_state.uploader_key += 1
-            st.session_state.auto_run_pending = True
-            st.rerun()
-
-    st.divider()
-    st.subheader("Add in Plain English")
-    has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
-    if not has_key:
-        st.warning("ANTHROPIC_API_KEY not set — add it to your .env file to enable NL parsing. "
-                   "CSV upload and optimization still work without it.")
-
-    col_input, col_btn = st.columns([5, 1])
-    nl_text = col_input.text_input(
-        "Order description",
-        placeholder=f'e.g. "Order 2241, Riverside Homes, 450 River Rd Macon GA, 48 {abbr}, rush"',
-        label_visibility="collapsed",
-        disabled=not has_key,
-    )
-    parse_clicked = col_btn.button("Parse", disabled=not has_key, use_container_width=True)
-
-    if parse_clicked and nl_text:
-        with st.spinner("Parsing + verifying…"):
             try:
-                parsed, verif = parse_and_verify(nl_text, unit_label)
-                st.session_state.pending = {"raw": nl_text, "parsed": parsed, "verif": verif}
+                with st.spinner("Reading FeneVision file…"):
+                    new_orders, skipped, excluded = import_fenevision_xlsx(
+                        fv_file,
+                        sheet_name=_chosen_sheet,
+                        exclude_route_patterns=exclude_patterns,
+                        min_sqft=min_sqft_import,
+                    )
             except Exception as e:
-                st.error(f"Parse error: {e}")
+                st.error(f"Could not read FeneVision file: {e}")
+            else:
+                st.session_state.orders = new_orders
+                st.session_state.assignments = []
+                st.session_state.dropped = []
+                st.session_state.uploader_key += 1
+                st.session_state.auto_run_pending = True
+                st.session_state.fv_filename = fv_file.name
+                st.session_state._jump_plan = True
+                try:
+                    fv_file.seek(0)
+                    st.session_state.supervisor_routes = parse_route_truck_summary(
+                        fv_file, exclude_route_patterns=exclude_patterns
+                    )
+                except Exception:
+                    st.session_state.supervisor_routes = []
+                if GEOCODING_AVAILABLE:
+                    st.session_state.auto_geocode_pending = True
+                msg = f"✅ {len(new_orders)} stops loaded"
+                if excluded:
+                    msg += f" · {len(excluded)} interplant route(s) excluded"
+                if skipped:
+                    msg += f" · {len(skipped)} placeholder stop(s) skipped"
+                msg += " — heading to Load Plan to optimize…"
+                st.success(msg)
+                st.rerun()
 
+    # ── Right: CSV + English tabs ──
+    with col_secondary:
+        st.markdown(
+            "<div style='font-size:11px;font-weight:800;text-transform:uppercase;"
+            "letter-spacing:.7px;color:#555;margin-bottom:4px;'>Other Import Methods</div>",
+            unsafe_allow_html=True,
+        )
+        _tab_csv, _tab_eng = st.tabs(["CSV Upload", "Add in English"])
+
+        with _tab_csv:
+            st.caption(
+                f"Required: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})  "
+                f"— optional: `priority`, `notes`"
+            )
+            uploaded = st.file_uploader(
+                "Choose CSV",
+                type=["csv"],
+                key=f"uploader_{st.session_state.uploader_key}",
+                label_visibility="collapsed",
+            )
+            if uploaded:
+                df = pd.read_csv(uploaded)
+                required = {"order_id", "customer_name", "address", "capacity_units"}
+                missing = required - set(df.columns)
+                if missing:
+                    st.error(f"CSV missing columns: {missing}")
+                else:
+                    new_orders = [
+                        Order(
+                            order_id=str(row["order_id"]),
+                            customer_name=str(row["customer_name"]),
+                            address=str(row["address"]),
+                            capacity_units=float(row["capacity_units"]),
+                            priority=0 if pd.isna(row.get("priority", 0)) else int(row.get("priority", 0)),
+                            notes="" if pd.isna(row.get("notes", "")) else str(row.get("notes", "")),
+                        )
+                        for _, row in df.iterrows()
+                    ]
+                    st.session_state.orders.extend(new_orders)
+                    st.session_state.assignments = []
+                    st.session_state.dropped = []
+                    st.session_state.uploader_key += 1
+                    st.session_state.auto_run_pending = True
+                    st.rerun()
+
+        with _tab_eng:
+            has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+            if not has_key:
+                st.caption("ANTHROPIC_API_KEY not set — add to .env to enable. CSV + optimizer work without it.")
+            st.caption(
+                f'Describe a stop in plain language — Claude parses it.  \n'
+                f'e.g. _"Order 2241, Riverside Homes, 450 River Rd Macon GA, 48 {abbr}, rush"_'
+            )
+            col_input, col_btn = st.columns([4, 1])
+            nl_text = col_input.text_input(
+                "Order description",
+                placeholder="Describe the stop…",
+                label_visibility="collapsed",
+                disabled=not has_key,
+            )
+            parse_clicked = col_btn.button("Parse", disabled=not has_key, use_container_width=True)
+
+            if parse_clicked and nl_text:
+                with st.spinner("Parsing + verifying…"):
+                    try:
+                        parsed, verif = parse_and_verify(nl_text, unit_label)
+                        st.session_state.pending = {"raw": nl_text, "parsed": parsed, "verif": verif}
+                    except Exception as e:
+                        st.error(f"Parse error: {e}")
+
+    # ── Verification card (full-width, below columns) ──
     if st.session_state.pending:
         p = st.session_state.pending
         verif = p["verif"]
@@ -619,11 +808,17 @@ def render_add_orders(cfg: dict):
             st.session_state.pending = None
             st.rerun()
 
+    # ── Current orders table (full-width) ──
     st.divider()
     st.subheader(f"Current Orders ({len(st.session_state.orders)})")
     if not st.session_state.orders:
         st.caption("No orders yet.")
         return
+
+    _n_builders = sum(1 for o in st.session_state.orders if _order_category(o) == "builder")
+    _n_dist = len(st.session_state.orders) - _n_builders
+    if _n_builders and _n_dist:
+        st.caption(f"**{_n_dist} distribution** stops (trailers OK) · **{_n_builders} builder** stops (straight trucks only)")
 
     rows = [
         {
@@ -631,6 +826,7 @@ def render_add_orders(cfg: dict):
             "Customer": o.customer_name,
             "Ship-To Address": o.address,
             f"Floor Space ({abbr})": o.capacity_units,
+            "Category": "Builder" if _order_category(o) == "builder" else "Distribution",
             "Truck": (", ".join(getattr(o, "allowed_truck_types", None) or [])) or "any",
             "Notes": o.notes,
         }
@@ -643,6 +839,13 @@ def render_add_orders(cfg: dict):
         st.session_state.assignments = []
         st.session_state.dropped = []
         st.rerun()
+
+
+def _order_category(order) -> str:
+    """'builder' if straight-truck-only, else 'distribution'."""
+    if order.allowed_truck_types and set(order.allowed_truck_types) == {"straight"}:
+        return "builder"
+    return "distribution"
 
 
 _ADDR_PLACEHOLDERS = {"none", "n/a", "tbd", "unknown", "na", ""}
@@ -676,6 +879,32 @@ def _flag_address_issues(assignments):
     return issues
 
 
+def _classify_drop(order, trucks, max_route_hours, stop_time_minutes, depot_lat, depot_lon, straight_speed_mph):
+    """Post-solve heuristic: guess why this order was dropped.
+
+    Returns: 'multiday' | 'homebuilder' | 'over_capacity' | 'capacity'
+
+    Limitation: only catches formal allowed_truck_types flag — not area knowledge
+    (weight-restricted roads, narrow streets, HOA access) Joseph carries in his head.
+    Compound solver drops may be misclassified.
+    """
+    if order.allowed_truck_types == ["straight"]:
+        return "homebuilder"
+
+    if order.lat is not None and depot_lat is not None:
+        lat1, lon1, lat2, lon2 = map(math.radians, [depot_lat, depot_lon, order.lat, order.lon])
+        a = (math.sin((lat2 - lat1) / 2) ** 2
+             + math.cos(lat1) * math.cos(lat2) * math.sin((lon2 - lon1) / 2) ** 2)
+        dist_mi = 3958.8 * 2 * math.asin(math.sqrt(a))
+        if (2 * dist_mi / straight_speed_mph) + (stop_time_minutes / 60) > max_route_hours:
+            return "multiday"
+
+    if order.capacity_units > max((t.max_capacity for t in trucks), default=0):
+        return "over_capacity"
+
+    return "capacity"
+
+
 def render_load_plan(cfg: dict):
     abbr = cfg["measurement"]["abbreviation"]
     routing_cfg = cfg.get("routing", {})
@@ -687,6 +916,7 @@ def render_load_plan(cfg: dict):
     manual_truck_count = int(routing_cfg.get("manual_truck_count", 13))
     solver_time_limit = int(routing_cfg.get("solver_time_limit_seconds", 15))
     osrm_server = routing_cfg.get("osrm_server", "")
+    two_phase_ordered = bool(routing_cfg.get("two_phase_ordered", False))
 
     trucks = [
         Truck(
@@ -708,10 +938,77 @@ def render_load_plan(cfg: dict):
 
     _fname = st.session_state.get("fv_filename")
     if _fname:
-        st.caption(f"📄 Loaded from: **{_fname}**")
+        st.markdown(
+            f"<div style='background:#fff;border:1px solid #dde3ea;border-radius:8px;"
+            f"padding:9px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;'>"
+            f"<span style='font-size:15px;'>📊</span>"
+            f"<div style='flex:1;'>"
+            f"<span style='font-size:12px;font-weight:800;color:#1a1a2e;'>{_fname}</span>"
+            f"<span style='font-size:11px;color:#888;margin-left:8px;'>"
+            f"{len(st.session_state.orders)} stops loaded</span>"
+            f"</div>"
+            f"<span style='font-size:10px;font-weight:800;background:#1a1a2e;color:#F58220;"
+            f"padding:3px 9px;border-radius:8px;cursor:default;"
+            f"' title='FeneVision live feed — roadmap item'>⚡ Live Feed →</span>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
 
     depot_addr = cfg["depot"].get("address", "")
     depot_coords = (33.749, -84.388)
+
+    # ── Routes-on-top: compact summary when a plan already exists ──
+    if st.session_state.assignments and not st.session_state.get("auto_run_pending"):
+        _asgn_top = st.session_state.assignments
+        _n_assigned = sum(len(a.stops) for a in _asgn_top)
+        _n_dropped  = len(st.session_state.dropped)
+        _cards_html = ""
+        for _a in _asgn_top:
+            _rth = getattr(_a, "route_time_hours", 0.0) or 0.0
+            _pct = _a.utilization_pct
+            _bar_color = "#4caf50" if _pct < 80 else ("#f59e0b" if _pct < 95 else "#ef4444")
+            _pill_bg   = "#e8f5e9" if _pct < 80 else ("#fff8e1" if _pct < 95 else "#fdeaea")
+            _pill_fg   = "#2e7d32" if _pct < 80 else ("#b45309" if _pct < 95 else "#c62828")
+            _dist = f" · {_a.route_distance_miles:.0f} mi" if _a.route_distance_miles else ""
+            _time = f" · ~{_rth:.1f} hr" if _rth else ""
+            _icon = "🚚" if _a.truck.truck_type == "trailer" else "🚛"
+            _stops_preview = " · ".join(s.order.customer_name for s in _a.stops[:3])
+            if len(_a.stops) > 3:
+                _stops_preview += f" · +{len(_a.stops)-3} more"
+            _cards_html += (
+                f"<div style='background:#fff;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.08);"
+                f"margin-bottom:6px;overflow:hidden;'>"
+                f"<div style='padding:8px 12px;display:flex;align-items:center;gap:8px;"
+                f"border-bottom:1px solid #f0f2f5;'>"
+                f"<span style='font-size:28px;line-height:1;'>{_icon}</span>"
+                f"<div style='flex:1;font-size:14px;font-weight:800;color:#1a1a2e;'>"
+                f"{_a.truck.name}{(' — ' + _a.truck.driver) if _a.truck.driver else ''}</div>"
+                f"<div style='font-size:12px;font-weight:800;background:{_pill_bg};color:{_pill_fg};"
+                f"padding:3px 10px;border-radius:8px;'>{_pct:.0f}%{_dist}{_time}</div>"
+                f"</div>"
+                f"<div style='height:4px;background:#f0f2f5;'>"
+                f"<div style='width:{min(_pct,100):.0f}%;height:4px;background:{_bar_color};'></div></div>"
+                f"<div style='padding:6px 14px;font-size:12px;color:#666;'>{_stops_preview}</div>"
+                f"</div>"
+            )
+        _drop_note = (
+            f"<span style='color:#c62828;font-weight:700;'> · {_n_dropped} dropped</span>"
+            if _n_dropped else ""
+        )
+        st.markdown(
+            f"<div style='margin-bottom:4px;'>"
+            f"<div style='font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;"
+            f"color:#1a7cb8;margin-bottom:8px;'>✅ Optimized Routes — "
+            f"{len(_asgn_top)} truck(s) · {_n_assigned} stops{_drop_note}</div>"
+            f"{_cards_html}</div>",
+            unsafe_allow_html=True,
+        )
+        _reo_col, _info_col = st.columns([1, 2])
+        if _reo_col.button("🔄 Re-Optimize", use_container_width=True):
+            st.session_state.auto_run_pending = True
+            st.rerun()
+        _info_col.caption("↓ Full route cards with reorder controls below")
+        st.divider()
 
     total_needed = sum(o.capacity_units for o in st.session_state.orders)
     fleet_cap = sum(t.max_capacity for t in trucks)
@@ -755,19 +1052,42 @@ def render_load_plan(cfg: dict):
         else:
             st.caption("No orders loaded yet.")
 
-    with st.expander("⚙️ Distance routing (optional — off by default)", expanded=False):
-        st.caption(
-            "By default the optimizer assigns stops to trucks without real driving distances — "
-            "it still produces valid load plans, just with unoptimized stop order within each truck. "
-            "Enable geocoding to add real distance-based sequencing (Haversine straight-line, ~5 min for 50 stops). "
-            "Swap for OSRM or Google Maps Distance Matrix API when you're ready for true road distances."
-        )
+    _already_geocoded = sum(1 for o in st.session_state.orders if o.lat is not None)
+    _needs_geocode = len(st.session_state.orders) - _already_geocoded
+    with st.expander("⚙️ Distance routing", expanded=False):
+        if _already_geocoded > 0:
+            st.caption(
+                f"{_already_geocoded}/{len(st.session_state.orders)} stops already geocoded at import time. "
+                f"Distance routing uses those coordinates for route sequencing and time estimates. "
+                f"{'Remaining ' + str(_needs_geocode) + ' stop(s) will be geocoded now.' if _needs_geocode else ''}"
+            )
+        else:
+            st.caption(
+                "Enable to add real distance-based sequencing and drive-time estimates "
+                "(Haversine straight-line, ~5 sec per stop). "
+                "Swap for OSRM or Google Maps Distance Matrix API when you're ready for true road distances."
+            )
         geocode_on = st.checkbox(
-            "Enable geocoding (uses free Nominatim — slow on large loads)",
-            value=False,
+            "Use geocoding for distance-based routing and time estimates",
+            value=GEOCODING_AVAILABLE,
             disabled=not GEOCODING_AVAILABLE,
             help="Install geopy to enable: pip install geopy" if not GEOCODING_AVAILABLE else "",
         )
+
+    if st.session_state.get("auto_geocode_pending") and GEOCODING_AVAILABLE and st.session_state.orders:
+        st.session_state.auto_geocode_pending = False
+        _n_to_geo = sum(1 for o in st.session_state.orders if o.lat is None)
+        with st.spinner(f"Geocoding {_n_to_geo} address(es)… then optimizing routes"):
+            _dep_addr_geo = cfg["depot"].get("address", "")
+            if _dep_addr_geo:
+                _dc_geo = geocode_address(_dep_addr_geo)
+                if _dc_geo:
+                    st.session_state._depot_coords = _dc_geo
+            for _o in st.session_state.orders:
+                if _o.lat is None:
+                    _c = geocode_address(_o.address)
+                    if _c:
+                        _o.lat, _o.lon = _c
 
     if st.session_state.get("auto_run_pending") and st.session_state.orders:
         orders_copy = copy.deepcopy(st.session_state.orders)
@@ -779,8 +1099,9 @@ def render_load_plan(cfg: dict):
             anim = st.empty()
             anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
             time.sleep(1.0)  # let tab-switch JS fire before solver blocks the thread
+            _auto_depot = st.session_state.get("_depot_coords") or depot_coords
             assignments, dropped = solve(
-                orders_copy, trucks, depot_coords,
+                orders_copy, trucks, _auto_depot,
                 max_route_hours=effective_max_hours,
                 stop_time_minutes=stop_time_minutes,
                 straight_speed_mph=straight_speed_mph,
@@ -796,42 +1117,60 @@ def render_load_plan(cfg: dict):
             for e in errors:
                 st.error(e)
 
-    btn_label = "🔄 Regenerate Load Plan" if st.session_state.assignments else "Generate Load Plan"
-    if st.button(btn_label, type="primary"):
-        orders_copy = copy.deepcopy(st.session_state.orders)
+    # --- Routing mode selector ---
+    _orders_all = st.session_state.orders
+    _n_builders = sum(1 for o in _orders_all if _order_category(o) == "builder")
+    _n_dist = len(_orders_all) - _n_builders
+    _show_phase_mode = _n_builders > 0 and _n_dist > 0
 
-        errors = validate_inputs(orders_copy, trucks)
-        if errors:
-            for e in errors:
-                st.error(e)
-            return
+    if _show_phase_mode:
+        routing_mode = st.radio(
+            "Routing mode",
+            ["All Orders", "Distribution / Builder Split"],
+            horizontal=True,
+            help=(
+                "Distribution / Builder Split solves distribution routes (trailers — lumber yards, "
+                "building supply) and builder routes (straight trucks — residential) separately. "
+                "Enable 'Lock distribution routes first' in Routing Config to enforce phase order."
+            ),
+        )
+    else:
+        routing_mode = "All Orders"
 
+    def _geocode_and_warn(orders_to_geo):
+        dc = st.session_state.pop("_depot_coords", None) or depot_coords
         if geocode_on:
-            with st.spinner("Geocoding addresses…"):
-                if depot_addr:
-                    result = geocode_address(depot_addr)
-                    if result:
-                        depot_coords = result
-                for order in orders_copy:
-                    coords = geocode_address(order.address)
-                    if coords:
-                        order.lat, order.lon = coords
-
-            warnings = check_route_cap(
-                orders_copy, depot_coords,
+            _ungeocoded = [o for o in orders_to_geo if o.lat is None]
+            if _ungeocoded:
+                with st.spinner(f"Geocoding {len(_ungeocoded)} remaining address(es)…"):
+                    if dc == depot_coords and depot_addr:
+                        r = geocode_address(depot_addr)
+                        if r:
+                            dc = r
+                    for order in _ungeocoded:
+                        c = geocode_address(order.address)
+                        if c:
+                            order.lat, order.lon = c
+            elif dc == depot_coords and depot_addr:
+                r = geocode_address(depot_addr)
+                if r:
+                    dc = r
+            _warns = check_route_cap(
+                orders_to_geo, dc,
                 max_route_hours=max_route_hours,
                 stop_time_minutes=stop_time_minutes,
                 straight_speed_mph=straight_speed_mph,
                 trailer_speed_mph=trailer_speed_mph,
             )
-            for w in warnings:
+            for w in _warns:
                 st.warning(f"Multi-day route flag: {w}")
+        return dc
 
-        st.session_state.dismiss_packing_issues = False
+    def _run_solve(orders_to_solve, dc):
         anim = st.empty()
         anim.markdown(_SOLVE_ANIMATION_HTML, unsafe_allow_html=True)
-        assignments, dropped = solve(
-            orders_copy, trucks, depot_coords,
+        asgn, drp = solve(
+            orders_to_solve, trucks, dc,
             max_route_hours=max_route_hours,
             stop_time_minutes=stop_time_minutes,
             straight_speed_mph=straight_speed_mph,
@@ -839,9 +1178,142 @@ def render_load_plan(cfg: dict):
             solver_time_limit=solver_time_limit,
             osrm_server=osrm_server,
         )
-        st.session_state.assignments = assignments
-        st.session_state.dropped = dropped
         anim.markdown(_SOLVE_DONE_HTML, unsafe_allow_html=True)
+        return asgn, drp
+
+    if routing_mode == "All Orders":
+        btn_label = "🔄 Regenerate Load Plan" if st.session_state.assignments else "Generate Load Plan"
+        if st.button(btn_label, type="primary"):
+            orders_copy = copy.deepcopy(_orders_all)
+            errors = validate_inputs(orders_copy, trucks)
+            if errors:
+                for e in errors:
+                    st.error(e)
+                return
+            dc = _geocode_and_warn(orders_copy)
+            st.session_state.dismiss_packing_issues = False
+            st.session_state.routing_phase = None
+            asgn, drp = _run_solve(orders_copy, dc)
+            st.session_state.assignments = asgn
+            st.session_state.dropped = drp
+
+    else:  # Distribution / Builder Split
+        _phase = st.session_state.routing_phase
+        _ph1_done = _phase == "distribution_done"
+
+        if two_phase_ordered:
+            # --- Locked mode: distribution must complete before builder routes ---
+            ph1_col, ph2_col, reset_col = st.columns([2, 2, 1])
+
+            with ph1_col:
+                _ph1_btn = "✅ Distribution routes locked" if _ph1_done else f"📦 Optimize Distribution ({_n_dist} stops)"
+                if st.button(_ph1_btn, type="secondary" if _ph1_done else "primary", disabled=_ph1_done):
+                    dist_orders = copy.deepcopy([o for o in _orders_all if _order_category(o) == "distribution"])
+                    errors = validate_inputs(dist_orders, trucks)
+                    if errors:
+                        for e in errors:
+                            st.error(e)
+                    else:
+                        dc = _geocode_and_warn(dist_orders)
+                        st.session_state.dismiss_packing_issues = False
+                        asgn, drp = _run_solve(dist_orders, dc)
+                        st.session_state.assignments = asgn
+                        st.session_state.dropped = drp
+                        st.session_state.routing_phase = "distribution_done"
+                        st.rerun()
+
+            with ph2_col:
+                if st.button(
+                    f"🏠 Add Builder Routes ({_n_builders} stops)",
+                    type="primary" if _ph1_done else "secondary",
+                    disabled=not _ph1_done,
+                    help="" if _ph1_done else "Complete Distribution routes first.",
+                ):
+                    builder_orders = copy.deepcopy([o for o in _orders_all if _order_category(o) == "builder"])
+                    errors = validate_inputs(builder_orders, trucks)
+                    if errors:
+                        for e in errors:
+                            st.error(e)
+                    else:
+                        dc = _geocode_and_warn(builder_orders)
+                        b_asgn, b_drp = _run_solve(builder_orders, dc)
+                        st.session_state.assignments = st.session_state.assignments + b_asgn
+                        st.session_state.dropped = st.session_state.dropped + b_drp
+                        st.session_state.routing_phase = None
+                        st.rerun()
+
+            with reset_col:
+                if st.button("↺ Reset", help="Clear plan and restart"):
+                    st.session_state.assignments = []
+                    st.session_state.dropped = []
+                    st.session_state.routing_phase = None
+                    st.rerun()
+
+            if _ph1_done:
+                st.info(
+                    f"**📦 Distribution Routes locked** — {len(st.session_state.assignments)} truck(s). "
+                    f"Click **Add Builder Routes** to slot in {_n_builders} builder stop(s)."
+                )
+
+        else:
+            # --- Unlocked mode: independent solves, both buttons always available ---
+            ph1_col, ph2_col, reset_col = st.columns([2, 2, 1])
+
+            with ph1_col:
+                if st.button(f"📦 Optimize Distribution ({_n_dist} stops)", type="primary"):
+                    dist_orders = copy.deepcopy([o for o in _orders_all if _order_category(o) == "distribution"])
+                    errors = validate_inputs(dist_orders, trucks)
+                    if errors:
+                        for e in errors:
+                            st.error(e)
+                    else:
+                        dc = _geocode_and_warn(dist_orders)
+                        st.session_state.dismiss_packing_issues = False
+                        asgn, drp = _run_solve(dist_orders, dc)
+                        # Keep any existing builder assignments, replace distribution ones
+                        existing_builder = [
+                            a for a in st.session_state.assignments
+                            if all(_order_category(s.order) == "builder" for s in a.stops)
+                        ]
+                        existing_builder_drp = [
+                            o for o in st.session_state.dropped
+                            if _order_category(o) == "builder"
+                        ]
+                        st.session_state.assignments = asgn + existing_builder
+                        st.session_state.dropped = drp + existing_builder_drp
+                        st.session_state.routing_phase = None
+                        st.rerun()
+
+            with ph2_col:
+                if st.button(f"🏠 Optimize Builder Routes ({_n_builders} stops)", type="primary"):
+                    builder_orders = copy.deepcopy([o for o in _orders_all if _order_category(o) == "builder"])
+                    errors = validate_inputs(builder_orders, trucks)
+                    if errors:
+                        for e in errors:
+                            st.error(e)
+                    else:
+                        dc = _geocode_and_warn(builder_orders)
+                        b_asgn, b_drp = _run_solve(builder_orders, dc)
+                        # Keep any existing distribution assignments, replace builder ones
+                        existing_dist = [
+                            a for a in st.session_state.assignments
+                            if not all(_order_category(s.order) == "builder" for s in a.stops)
+                        ]
+                        existing_dist_drp = [
+                            o for o in st.session_state.dropped
+                            if _order_category(o) == "distribution"
+                        ]
+                        st.session_state.assignments = existing_dist + b_asgn
+                        st.session_state.dropped = existing_dist_drp + b_drp
+                        st.session_state.routing_phase = None
+                        st.rerun()
+
+            with reset_col:
+                if st.button("↺ Reset", help="Clear plan and restart"):
+                    st.session_state.assignments = []
+                    st.session_state.dropped = []
+                    st.session_state.routing_phase = None
+                    st.rerun()
 
     if not st.session_state.assignments and not st.session_state.dropped:
         return
@@ -976,53 +1448,97 @@ def render_load_plan(cfg: dict):
                     )
 
     if st.session_state.dropped:
-        dropped_ids = ", ".join(o.order_id for o in st.session_state.dropped)
-        # Check whether these drops are likely multi-day (geocoding was on and warnings fired)
-        _multiday_ids = set()
-        for _o in st.session_state.dropped:
-            if _o.lat is not None:  # geocoded → HOS cap caused drop, not capacity
-                _multiday_ids.add(_o.order_id)
-        _likely_multiday = len(_multiday_ids) > 0 and len(_multiday_ids) == len(st.session_state.dropped)
+        _dc = st.session_state.get("_depot_coords") or depot_coords
+        _dc_lat, _dc_lon = _dc
 
-        if _likely_multiday:
+        _cls = {
+            o.order_id: _classify_drop(
+                o, trucks, max_route_hours, stop_time_minutes,
+                _dc_lat, _dc_lon, straight_speed_mph,
+            )
+            for o in st.session_state.dropped
+        }
+        _multiday    = [o for o in st.session_state.dropped if _cls[o.order_id] == "multiday"]
+        _homebuilder = [o for o in st.session_state.dropped if _cls[o.order_id] == "homebuilder"]
+        _true_drops  = [o for o in st.session_state.dropped if _cls[o.order_id] in ("capacity", "over_capacity")]
+
+        st.markdown(f"**⚠ {len(st.session_state.dropped)} order(s) could not be assigned as same-day routes:**")
+
+        if _multiday:
             with st.expander(
-                f"🗓 {len(st.session_state.dropped)} stop(s) dropped — likely multi-day routes "
-                f"(NC / SC / AL runs that exceed the {max_route_hours:.0f}-hr daily cap)",
+                f"🗓 {len(_multiday)} Multi-Day Route{'s' if len(_multiday) > 1 else ''} — "
+                f"geographic distance exceeds {max_route_hours:.0f}-hr daily cap",
                 expanded=True,
             ):
+                _ids = ", ".join(o.order_id for o in _multiday)
                 st.markdown(
-                    f"**Stops:** {dropped_ids}  \n"
-                    "These are long-haul routes. Real drive time exceeds the single-day limit. "
-                    "Choose how to handle them:"
+                    f"<div style='background:#fff8e1;border:1.5px solid #f0c040;border-radius:6px;"
+                    f"padding:10px 14px;color:#7a5700;font-size:13px;margin-bottom:8px;'>"
+                    f"<strong>Stops:</strong> {_ids}<br>"
+                    f"Fit by capacity — drive time alone exceeds the {max_route_hours:.0f}-hr round-trip cap. "
+                    f"Schedule as overnight or multi-day runs.</div>",
+                    unsafe_allow_html=True,
                 )
                 _opt1, _opt2, _opt3 = st.columns(3)
                 if _opt1.button(
-                    "🚐 Include as multi-day runs",
-                    help="Raises max route hours to 24 and re-solves. Flag these trucks for overnight.",
+                    "🌙 Plan Multi-Day Routes Separately",
+                    help="Solves just these stops with a 24-hr cap. Keeps same-day plan intact.",
                     use_container_width=True,
                 ):
-                    st.session_state.overnight_cap = 24.0
-                    st.session_state.auto_run_pending = True
+                    _md_orders = copy.deepcopy(_multiday)
+                    _md_asgn, _md_drp = solve(
+                        _md_orders, trucks,
+                        st.session_state.get("_depot_coords") or depot_coords,
+                        max_route_hours=24.0,
+                        stop_time_minutes=stop_time_minutes,
+                        straight_speed_mph=straight_speed_mph,
+                        trailer_speed_mph=trailer_speed_mph,
+                        solver_time_limit=solver_time_limit,
+                        osrm_server=osrm_server,
+                    )
+                    st.session_state.multiday_assignments = _md_asgn
+                    st.session_state.multiday_dropped = _md_drp
+                    _md_ids = {o.order_id for o in _multiday}
+                    st.session_state.dropped = [o for o in st.session_state.dropped if o.order_id not in _md_ids]
                     st.rerun()
                 if _opt2.button(
                     "🚫 Exclude & plan separately",
                     help="Removes these stops from session. Plan them as a dedicated run.",
                     use_container_width=True,
                 ):
-                    _drop_ids = {o.order_id for o in st.session_state.dropped}
-                    st.session_state.orders = [
-                        o for o in st.session_state.orders if o.order_id not in _drop_ids
-                    ]
-                    st.session_state.dropped = []
+                    _md_ids = {o.order_id for o in _multiday}
+                    st.session_state.orders  = [o for o in st.session_state.orders  if o.order_id not in _md_ids]
+                    st.session_state.dropped = [o for o in st.session_state.dropped if o.order_id not in _md_ids]
                     st.session_state.auto_run_pending = True
                     st.rerun()
-                _opt3.caption(
-                    "Or: adjust **Max Route Hours** in the sidebar routing config manually."
-                )
-        else:
-            st.error(
-                f"⚠ {len(st.session_state.dropped)} order(s) could not be assigned "
-                f"(fleet capacity exceeded or route cap hit): {dropped_ids}"
+                _opt3.caption("Or: adjust **Max Route Hours** in the sidebar routing config.")
+
+        if _homebuilder:
+            _ids = ", ".join(o.order_id for o in _homebuilder)
+            st.markdown(
+                f"<div style='background:#fff3e0;border:1.5px solid #F58220;border-radius:6px;"
+                f"padding:10px 14px;color:#7a3500;font-size:13px;margin-bottom:8px;'>"
+                f"🏠 <strong>{len(_homebuilder)} Homebuilder Conflict{'s' if len(_homebuilder) > 1 else ''} "
+                f"— straight-truck restricted, no room available</strong><br>"
+                f"<span style='font-size:12px;'>{_ids}<br>"
+                f"Flagged as homebuilder (no 53ft trailer). All straight trucks are full or at fill cap. "
+                f"Add a straight truck or increase fill % in the sidebar.<br>"
+                f"<em>Note: only catches FeneVision-flagged stops — not informal road restrictions "
+                f"(narrow streets, bridge weight limits) known from area experience.</em></span></div>",
+                unsafe_allow_html=True,
+            )
+
+        if _true_drops:
+            _ids = ", ".join(o.order_id for o in _true_drops)
+            st.markdown(
+                f"<div style='background:#fdeaea;border:1.5px solid #e57373;border-radius:6px;"
+                f"padding:10px 14px;color:#b71c1c;font-size:13px;margin-bottom:8px;'>"
+                f"❌ <strong>{len(_true_drops)} True Drop{'s' if len(_true_drops) > 1 else ''} "
+                f"— capacity or constraint conflict</strong><br>"
+                f"<span style='font-size:12px;'>{_ids}<br>"
+                f"Cannot fit on any available truck within current constraints. "
+                f"Add a truck, remove these orders, or increase fill cap.</span></div>",
+                unsafe_allow_html=True,
             )
 
     if not st.session_state.assignments:
@@ -1031,55 +1547,120 @@ def render_load_plan(cfg: dict):
 
     st.divider()
     _all_asgn = st.session_state.assignments  # alias for reorder callbacks
+
+    # ── Section header helpers for Distribution / Builder Split mode ──────────
+    def _asgn_category(asgn) -> str:
+        """'builder' if every stop is builder-restricted, else 'distribution'."""
+        if asgn.stops and all(_order_category(s.order) == "builder" for s in asgn.stops):
+            return "builder"
+        return "distribution"
+
+    _split_mode = (routing_mode == "Distribution / Builder Split")
+    _seen_dist_hdr = False
+    _seen_bld_hdr = False
+
     for v_idx, assignment in enumerate(_all_asgn):
+        # ── Inject section headers in split mode ──────────────────────────────
+        if _split_mode:
+            _cat = _asgn_category(assignment)
+            if _cat == "distribution" and not _seen_dist_hdr:
+                _seen_dist_hdr = True
+                if two_phase_ordered:
+                    st.markdown(
+                        "<div style='font-size:1.05rem;font-weight:700;color:#1a1a2e;"
+                        "padding:6px 0 4px 0;margin-top:4px;'>"
+                        "📦 Phase 1 — Distribution Routes"
+                        "<span style='font-size:11px;font-weight:600;background:#1a7cb8;"
+                        "color:#fff;border-radius:4px;padding:2px 7px;margin-left:8px;"
+                        "vertical-align:middle;'>LOCKED</span>"
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        "<div style='font-size:1.05rem;font-weight:700;color:#1a1a2e;"
+                        "padding:6px 0 4px 0;margin-top:4px;'>📦 Distribution Routes</div>",
+                        unsafe_allow_html=True,
+                    )
+            elif _cat == "builder" and not _seen_bld_hdr:
+                _seen_bld_hdr = True
+                if two_phase_ordered:
+                    st.markdown(
+                        "<div style='font-size:1.05rem;font-weight:700;color:#1a1a2e;"
+                        "padding:6px 0 4px 0;margin-top:12px;'>"
+                        "🏠 Phase 2 — Builder Routes</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    st.markdown(
+                        "<div style='font-size:1.05rem;font-weight:700;color:#1a1a2e;"
+                        "padding:6px 0 4px 0;margin-top:12px;'>🏠 Builder Routes</div>",
+                        unsafe_allow_html=True,
+                    )
         dist_str = f" · {assignment.route_distance_miles:.0f} mi" if assignment.route_distance_miles else ""
         _rth = getattr(assignment, 'route_time_hours', 0.0)
         time_str = f" · ~{_rth:.1f} hr" if _rth else ""
         _driver = getattr(assignment.truck, "driver", "") or ""
         _driver_str = f" · {_driver}" if _driver else ""
+        _exp_icon = "🚚" if assignment.truck.truck_type == "trailer" else "🚛"
         label = (
-            f"🚛 {assignment.truck.name}{_driver_str} — "
+            f"{_exp_icon} {assignment.truck.name}{_driver_str} — "
             f"{assignment.total_capacity_used:.0f}/{assignment.truck.max_capacity:.0f} {abbr} "
             f"({assignment.utilization_pct:.0f}% utilized){dist_str}{time_str}"
         )
         with st.expander(label, expanded=True):
+            # ── Inline driver name assignment ──
+            _d_col, _save_col, _ = st.columns([2, 1, 4])
+            _new_driver = _d_col.text_input(
+                "Driver", value=_driver, key=f"driver_input_{v_idx}",
+                placeholder="Assign driver name",
+                label_visibility="collapsed",
+            )
+            if _save_col.button("Assign", key=f"driver_save_{v_idx}", use_container_width=True):
+                _truck_cfg = next(
+                    (t for t in cfg["trucks"] if t["name"] == assignment.truck.name), None
+                )
+                if _truck_cfg is not None:
+                    _truck_cfg["driver"] = _new_driver
+                    save_config(cfg)
+                    assignment.truck.driver = _new_driver
+                    st.rerun()
+
             c1, c2 = st.columns(2)
             with c1:
-                st.markdown("**Delivery Sequence** *(use ↑ ↓ to reorder, ⇄ to move truck)*")
+                from streamlit_sortables import sort_items as _sort_items
+                st.markdown("**Delivery Sequence** — drag ⠿ to reorder · ⇄ to move truck")
+
+                # Draggable reorder (within truck)
+                _sort_labels_orig = [
+                    f"{stop.order.order_id}||{stop.stop_number}. {stop.order.customer_name}"
+                    for stop in assignment.stops
+                ]
+                _sorted_labels = _sort_items(_sort_labels_orig, key=f"sort_{v_idx}")
+                if _sorted_labels != _sort_labels_orig:
+                    _new_ids = [lbl.split("||")[0] for lbl in _sorted_labels]
+                    _id_to_stop = {s.order.order_id: s for s in _all_asgn[v_idx].stops}
+                    _all_asgn[v_idx].stops = [_id_to_stop[oid] for oid in _new_ids if oid in _id_to_stop]
+                    for _n, _stp in enumerate(_all_asgn[v_idx].stops, 1):
+                        _stp.stop_number = _n
+                    _spd = straight_speed_mph if _all_asgn[v_idx].truck.truck_type == "straight" else trailer_speed_mph
+                    _all_asgn[v_idx].route_time_hours = (
+                        (_all_asgn[v_idx].route_distance_miles / _spd if _all_asgn[v_idx].route_distance_miles else 0.0)
+                        + len(_all_asgn[v_idx].stops) * stop_time_minutes / 60
+                    )
+                    st.rerun()
+
+                # Per-stop detail + cross-truck move
                 for s_idx, stop in enumerate(assignment.stops):
                     _fv_ids = getattr(stop.order, "fenevision_ids", None)
-                    _id_label = f" · Order #{_fv_ids}" if _fv_ids else ""
-                    _btn_col, _info_col, _chk_col = st.columns([1, 7, 1.5])
-                    with _btn_col:
-                        _n_stops = len(assignment.stops)
-                        if st.button("↑", key=f"mv_up_{v_idx}_{s_idx}",
-                                     disabled=(s_idx == 0), use_container_width=True):
-                            _s = _all_asgn[v_idx].stops
-                            _s[s_idx], _s[s_idx - 1] = _s[s_idx - 1], _s[s_idx]
-                            for _n, _stp in enumerate(_s, 1):
-                                _stp.stop_number = _n
-                            _spd = straight_speed_mph if _all_asgn[v_idx].truck.truck_type == "straight" else trailer_speed_mph
-                            _all_asgn[v_idx].route_time_hours = (
-                                (_all_asgn[v_idx].route_distance_miles / _spd if _all_asgn[v_idx].route_distance_miles else 0.0)
-                                + len(_s) * stop_time_minutes / 60
-                            )
-                            st.rerun()
-                        if st.button("↓", key=f"mv_dn_{v_idx}_{s_idx}",
-                                     disabled=(s_idx == _n_stops - 1), use_container_width=True):
-                            _s = _all_asgn[v_idx].stops
-                            _s[s_idx], _s[s_idx + 1] = _s[s_idx + 1], _s[s_idx]
-                            for _n, _stp in enumerate(_s, 1):
-                                _stp.stop_number = _n
-                            _spd = straight_speed_mph if _all_asgn[v_idx].truck.truck_type == "straight" else trailer_speed_mph
-                            _all_asgn[v_idx].route_time_hours = (
-                                (_all_asgn[v_idx].route_distance_miles / _spd if _all_asgn[v_idx].route_distance_miles else 0.0)
-                                + len(_s) * stop_time_minutes / 60
-                            )
-                            st.rerun()
-                        # Move to different truck
+                    _is_builder = bool(stop.order.allowed_truck_types and
+                                       set(stop.order.allowed_truck_types) == {"straight"})
+                    _info_col, _move_col, _chk_col = st.columns([7, 2.5, 1])
+                    # Move to different truck
+                    with _move_col:
                         if len(_all_asgn) > 1:
                             _other_opts = {
-                                f"{a.truck.name}{' · ' + a.truck.driver if a.truck.driver else ''} (stop {len(a.stops)+1})": i
+                                f"{a.truck.name}{' · ' + a.truck.driver if a.truck.driver else ''}": i
                                 for i, a in enumerate(_all_asgn) if i != v_idx
                             }
                             _dest_label = st.selectbox(
@@ -1088,36 +1669,59 @@ def render_load_plan(cfg: dict):
                                 key=f"mv_dest_{v_idx}_{s_idx}",
                                 label_visibility="collapsed",
                             )
-                            if st.button("⇄", key=f"mv_truck_{v_idx}_{s_idx}",
-                                         use_container_width=True, help="Move stop to selected truck"):
+                            if st.button("⇄ Move", key=f"mv_truck_{v_idx}_{s_idx}",
+                                         use_container_width=True, help="Move to selected truck"):
                                 _dest_idx = _other_opts[_dest_label]
                                 _moving = _all_asgn[v_idx].stops.pop(s_idx)
                                 _all_asgn[_dest_idx].stops.append(_moving)
-                                # renumber both trucks
                                 for _n, _stp in enumerate(_all_asgn[v_idx].stops, 1):
                                     _stp.stop_number = _n
                                 for _n, _stp in enumerate(_all_asgn[_dest_idx].stops, 1):
                                     _stp.stop_number = _n
-                                # recalc time for both affected trucks
                                 for _ti in [v_idx, _dest_idx]:
                                     _spd = straight_speed_mph if _all_asgn[_ti].truck.truck_type == "straight" else trailer_speed_mph
                                     _all_asgn[_ti].route_time_hours = (
                                         (_all_asgn[_ti].route_distance_miles / _spd if _all_asgn[_ti].route_distance_miles else 0.0)
                                         + len(_all_asgn[_ti].stops) * stop_time_minutes / 60
                                     )
-                                # drop truck if now empty
-                                st.session_state.assignments = [
-                                    a for a in _all_asgn if a.stops
-                                ]
+                                st.session_state.assignments = [a for a in _all_asgn if a.stops]
                                 st.rerun()
                     with _info_col:
+                        _truck_tag = (
+                            "<span style='font-size:9px;background:#f0f4f8;color:#555;"
+                            "border-radius:8px;padding:1px 6px;font-weight:600;"
+                            "margin-left:5px;vertical-align:middle;'>26ft only</span>"
+                            if _is_builder else ""
+                        )
+                        _fv_line = (
+                            f"<div style='font-size:10px;color:#1a7cb8;font-family:monospace;"
+                            f"background:#eef4fb;display:inline-block;border-radius:3px;"
+                            f"padding:1px 5px;margin-top:2px;'>{_fv_ids}</div>"
+                            if _fv_ids else ""
+                        )
+                        _pri_tag = (
+                            f"<span style='background:#d32f2f;color:#fff;font-size:9px;"
+                            f"padding:1px 5px;border-radius:3px;margin-left:5px;'>P{stop.order.priority}</span>"
+                            if stop.order.priority > 0 else ""
+                        )
+                        _rname = getattr(stop.order, "route_name", None)
+                        _route_tag = (
+                            f"<span style='font-size:9px;background:#f0f4f8;color:#1a7cb8;"
+                            f"border-radius:8px;padding:1px 7px;font-weight:700;"
+                            f"margin-left:5px;vertical-align:middle;border:1px solid #d0e4f5;'>"
+                            f"{_rname}</span>"
+                            if _rname else ""
+                        )
                         st.markdown(
-                            f"**{stop.stop_number}.** {stop.order.customer_name}  \n"
-                            f"<span style='color:gray;font-size:0.85em'>"
-                            f"{stop.order.address} · {stop.order.capacity_units:.0f} {abbr}"
-                            f"{_id_label}"
-                            f"{'  · P' + str(stop.order.priority) if stop.order.priority > 0 else ''}"
-                            f"</span>",
+                            f"<span style='font-size:13px;color:#bbb;margin-right:4px;'>⠿</span>"
+                            f"<span style='display:inline-block;width:20px;height:20px;"
+                            f"border-radius:50%;background:#1a7cb8;color:#fff;"
+                            f"font-size:10px;font-weight:800;text-align:center;line-height:20px;"
+                            f"margin-right:5px;vertical-align:middle;'>{stop.stop_number}</span>"
+                            f"**{stop.order.customer_name}**{_truck_tag}{_pri_tag}  \n"
+                            f"<span style='color:gray;font-size:0.85em'>{stop.order.address}</span>"
+                            f"{_route_tag}  \n"
+                            f"{_fv_line}",
                             unsafe_allow_html=True,
                         )
                         if stop.order.notes:
@@ -1145,7 +1749,21 @@ def render_load_plan(cfg: dict):
             with c2:
                 st.markdown("**Load Sequence** *(load #1 first — loads deepest into truck)*")
                 for i, stop in enumerate(assignment.load_sequence, 1):
-                    st.markdown(f"**Load {i}.** {stop.order.customer_name} — {stop.order.capacity_units:.0f} {abbr}")
+                    _rname = getattr(stop.order, "route_name", None)
+                    _route_pill = (
+                        f'<span style="font-size:12px;font-weight:700;color:#1a7cb8;background:#eef4fb;'
+                        f'border:1px solid #c5ddf5;border-radius:10px;padding:2px 9px;">{_html_mod.escape(_rname)}</span>'
+                        if _rname else ""
+                    )
+                    st.markdown(
+                        f'<div style="padding:6px 0;border-bottom:1px solid #f0f4f8;display:flex;align-items:center;gap:8px;">'
+                        f'<span style="font-size:13px;font-weight:800;color:#555;min-width:60px;">Load {i}.</span>'
+                        f'<span style="flex:1;font-size:14px;font-weight:700;color:#1a1a2e;">{_html_mod.escape(stop.order.customer_name)}</span>'
+                        f'{_route_pill}'
+                        f'<span style="font-size:12px;color:#888;min-width:60px;text-align:right;">{stop.order.capacity_units:.0f} {_html_mod.escape(abbr)}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
 
             if FOLIUM_AVAILABLE:
                 stops_with_coords = [s for s in assignment.stops if s.order.lat is not None]
@@ -1182,6 +1800,53 @@ def render_load_plan(cfg: dict):
                     )
                     folium.PolyLine(route_pts, color="#1f77b4", weight=2.5, opacity=0.8).add_to(m)
                     st_folium(m, width="100%", height=350, returned_objects=[])
+
+    if st.session_state.get("multiday_assignments"):
+        st.divider()
+        _md_asgn_list = st.session_state.multiday_assignments
+        _md_drp_list  = st.session_state.multiday_dropped
+        _md_stops_total = sum(len(a.stops) for a in _md_asgn_list)
+        st.markdown(
+            f"<div style='background:#fff8e1;border-left:4px solid #f0c040;padding:10px 16px;"
+            f"border-radius:0 6px 6px 0;margin-bottom:12px;'>"
+            f"<strong>🌙 Multi-Day Routes — {len(_md_asgn_list)} truck(s) · {_md_stops_total} stops</strong><br>"
+            f"<span style='font-size:12px;color:#7a5700;'>These runs exceed the 9-hr same-day cap. "
+            f"Dispatch overnight or schedule as a separate next-day run.</span></div>",
+            unsafe_allow_html=True,
+        )
+        for _md_v in _md_asgn_list:
+            _md_dist = f" · {_md_v.route_distance_miles:.0f} mi" if _md_v.route_distance_miles else ""
+            _md_time = f" · ~{getattr(_md_v,'route_time_hours',0.0):.1f} hr" if getattr(_md_v,'route_time_hours',0.0) else ""
+            _md_label = (
+                f"🌙 OVERNIGHT — {_md_v.truck.name} — "
+                f"{_md_v.total_capacity_used:.0f}/{_md_v.truck.max_capacity:.0f} {abbr} "
+                f"({_md_v.utilization_pct:.0f}%){_md_dist}{_md_time}"
+            )
+            with st.expander(_md_label, expanded=True):
+                for _md_s in _md_v.stops:
+                    _md_o = _md_s.order
+                    st.markdown(
+                        f"**{_md_s.stop_number}.** {_md_o.customer_name}  \n"
+                        f"<span style='font-size:12px;color:#555;'>{_md_o.address}</span>  \n"
+                        f"<span style='font-size:11px;color:#888;'>{_md_o.capacity_units:.0f} {abbr}</span>",
+                        unsafe_allow_html=True,
+                    )
+        if _md_drp_list:
+            st.warning(f"{len(_md_drp_list)} multi-day stop(s) still couldn't be assigned: "
+                       + ", ".join(o.order_id for o in _md_drp_list))
+        _md_html_str = generate_html_routes(
+            _md_asgn_list,
+            depot_name=cfg["depot"].get("name", "Lindsay Windows"),
+            date_str=datetime.date.today().isoformat(),
+            is_overnight=True,
+        )
+        st.download_button(
+            "⬇ Export Multi-Day Route Sheets (HTML)",
+            data=_md_html_str.encode("utf-8"),
+            file_name="route_sheets_multiday.html",
+            mime="text/html",
+            key="multiday_html_download",
+        )
 
     st.divider()
     if st.session_state.assignments:
@@ -1328,6 +1993,60 @@ def render_analysis(cfg: dict):
 
     st.divider()
 
+    # --- Supervisor's actual routes comparison (populated when xlsx is loaded) ---
+    supervisor_routes = st.session_state.get("supervisor_routes", [])
+    if supervisor_routes:
+        st.subheader("Supervisor's Actual Routes (FeneVision Route Truck Summary)")
+        st.caption(
+            "These are the routes the manual planner assigned for the same date, pulled directly "
+            "from FeneVision's Route Truck Summary sheet. "
+            "Compare utilization and truck count against the optimizer's plan above. "
+            "Discrepancies surface constraints the optimizer doesn't know about yet."
+        )
+        sup_rows = []
+        for r in supervisor_routes:
+            sup_rows.append({
+                "Driver / Route": r["route_name"],
+                "Truck Type": r["truck_type_desc"],
+                "Sq Ft Used": round(r["sqft_used"], 1) if r["sqft_used"] else "—",
+                "Capacity (sq ft)": round(r["capacity"], 1) if r["capacity"] else "—",
+                "Utilization %": round(r["utilization_pct"], 1) if r["utilization_pct"] else "—",
+            })
+        st.dataframe(pd.DataFrame(sup_rows), use_container_width=True, hide_index=True)
+
+        # Side-by-side truck count and avg utilization
+        sup_avg_util = (
+            round(
+                sum(r["utilization_pct"] for r in supervisor_routes if r["utilization_pct"])
+                / max(1, sum(1 for r in supervisor_routes if r["utilization_pct"])),
+                1,
+            )
+        )
+        sup_trailers = sum(1 for r in supervisor_routes if r.get("truck_type") == "trailer")
+        sup_straights = sum(1 for r in supervisor_routes if r.get("truck_type") == "straight")
+        o_trailers = sum(1 for a in assignments if a.truck.truck_type == "trailer")
+        o_straights = sum(1 for a in assignments if a.truck.truck_type == "straight")
+        delta_trucks = len(supervisor_routes) - len(assignments)
+
+        head_cols = st.columns(3)
+        head_cols[0].metric(
+            "Trucks: Manual vs Optimizer",
+            f"{len(supervisor_routes)} → {len(assignments)}",
+            delta=f"{delta_trucks:+d} fewer" if delta_trucks > 0 else (f"{-delta_trucks:+d} more" if delta_trucks < 0 else "same"),
+            delta_color="normal" if delta_trucks >= 0 else "inverse",
+        )
+        head_cols[1].metric(
+            "Avg Utilization %: Manual vs Optimizer",
+            f"{sup_avg_util}% → {avg_util}%",
+        )
+        head_cols[2].metric(
+            "Trailers / Straights: Manual Plan",
+            f"{sup_trailers}T / {sup_straights}S",
+            delta=f"Optimizer: {o_trailers}T / {o_straights}S",
+            delta_color="off",
+        )
+        st.divider()
+
     # --- Excel export ---
     st.subheader("Export to Excel")
     import tempfile, os
@@ -1360,6 +2079,99 @@ def render_analysis(cfg: dict):
             key="analysis_download",
         )
 
+    st.divider()
+
+    # --- Route discrepancy surfacing ---
+    supervisor_routes = st.session_state.get("supervisor_routes", [])
+    if supervisor_routes and assignments:
+        st.subheader("🔍 Stop-Level Discrepancies")
+        st.caption(
+            "Stops the optimizer routed differently than Joseph's plan — each is a question to raise. "
+            "Confirmed constraints → add to CLAUDE.md."
+        )
+        _disc_rows = []
+        for r in supervisor_routes:
+            sup_stops = set(r.get("stop_names", []))
+            if not sup_stops:
+                continue
+            for a in assignments:
+                opt_stops = {s.order.customer_name for s in a.stops}
+                _in_sup_not_opt = sup_stops - opt_stops
+                _in_opt_not_sup = opt_stops - sup_stops
+                if _in_sup_not_opt or _in_opt_not_sup:
+                    for nm in _in_sup_not_opt:
+                        _disc_rows.append({
+                            "Stop": nm, "Joseph's Route": r["route_name"],
+                            "Optimizer Route": "—", "Delta": "Joseph has it, optimizer doesn't"
+                        })
+                    for nm in _in_opt_not_sup:
+                        _disc_rows.append({
+                            "Stop": nm, "Joseph's Route": "—",
+                            "Optimizer Route": f"{a.truck.name}{' · ' + a.truck.driver if a.truck.driver else ''}",
+                            "Delta": "Optimizer has it, Joseph doesn't"
+                        })
+        if _disc_rows:
+            st.dataframe(pd.DataFrame(_disc_rows), use_container_width=True, hide_index=True)
+        else:
+            st.success("No discrepancies found — optimizer and Joseph's plan match at stop level.")
+
+    st.divider()
+
+    # --- AI Supervisor Summary (Haiku) ---
+    st.subheader("🤖 AI Supervisor Summary")
+    st.caption("Haiku analyses the run and flags anything that needs supervisor attention.")
+    _has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    if not _has_key:
+        st.warning("ANTHROPIC_API_KEY not set — AI summary requires it.")
+    else:
+        if st.button("Generate Summary", key="ai_summary_btn"):
+            import json as _json
+            _run_data = {
+                "trucks": [
+                    {
+                        "name": a.truck.name,
+                        "driver": a.truck.driver or "unassigned",
+                        "type": a.truck.truck_type,
+                        "stops": len(a.stops),
+                        "capacity_pct": round(a.utilization_pct, 1),
+                        "route_miles": round(a.route_distance_miles, 1) if a.route_distance_miles else None,
+                        "route_hours": round(getattr(a, "route_time_hours", 0.0) or 0.0, 1),
+                    }
+                    for a in assignments
+                ],
+                "dropped": len(dropped),
+                "max_route_hours": float(routing_cfg.get("max_route_hours", 9.0)),
+                "supervisor_truck_count": len(supervisor_routes) if supervisor_routes else None,
+            }
+            try:
+                from src.parser import _client  # reuse existing Anthropic client
+                _resp = _client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=600,
+                    messages=[{
+                        "role": "user",
+                        "content": (
+                            f"Analyse this Lindsay Windows delivery run and give a supervisor-level summary.\n"
+                            f"Cover: (1) trucks near or over the {_run_data['max_route_hours']}-hr HOS limit, "
+                            f"(2) capacity utilisation, (3) whether load rebalancing would help, "
+                            f"(4) dropped orders. Be direct — read by a logistics supervisor.\n"
+                            f"Run data: {_json.dumps(_run_data)}\n"
+                            "Plain prose, no JSON."
+                        ),
+                    }],
+                )
+                st.session_state["ai_summary"] = _resp.content[0].text
+            except Exception as _e:
+                st.error(f"AI summary failed: {_e}")
+
+        if st.session_state.get("ai_summary"):
+            st.markdown(
+                f"<div style='background:#f8fafc;border-left:4px solid #1a7cb8;"
+                f"border-radius:0 8px 8px 0;padding:14px 16px;font-size:14px;line-height:1.7;'>"
+                f"{st.session_state['ai_summary']}</div>",
+                unsafe_allow_html=True,
+            )
+
 
 def main():
     st.set_page_config(page_title="Lindsay Windows — Load Planner", page_icon="🪟", layout="wide")
@@ -1386,24 +2198,70 @@ def main():
             "var t=window.parent.document.querySelectorAll('[data-baseweb=tab]');"
             "if(t&&t.length>0)t[0].click();"
             "}catch(e){}},400);</script>",
-            height=0,
+            height=1,
         )
     if st.session_state.get("_jump_plan"):
         st.session_state._jump_plan = False
         st.iframe(
             "<script>setTimeout(function(){try{"
             "var doc=window.parent.document;"
-            "var t=doc.querySelectorAll('button[data-baseweb=\"tab\"]');"
-            "if(!t||t.length<2)t=doc.querySelectorAll('[role=\"tab\"]');"
-            "if(t&&t.length>1)t[1].click();"
+            "var t=doc.querySelectorAll('[role=\"tab\"]');"
+            "if(t&&t.length>1){t[1].click();sessionStorage.setItem('lw_tab','1');}"
             "}catch(e){}},800);</script>",
-            height=0,
+            height=1,
         )
 
     st.iframe("""
 <script>
 (function(){
   var doc = window.parent.document;
+
+  // Keyboard fix: Streamlit's 'c' shortcut (clear cache) fires on Cmd+C.
+  // Must attach to window.parent (not doc) and use stopImmediatePropagation
+  // so React's capture-phase handlers don't see the event.
+  if (!window.parent.__lwKbFixed) {
+    window.parent.__lwKbFixed = true;
+    window.parent.addEventListener('keydown', function(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') {
+        e.stopImmediatePropagation();
+      }
+    }, true);
+  }
+
+  // Tab persistence: save user's active tab to sessionStorage on every tab click;
+  // restore it after each Streamlit rerun so widget interactions don't snap back to tab 0.
+  if (!doc.__lwTabSaver) {
+    doc.__lwTabSaver = true;
+    doc.addEventListener('click', function(e) {
+      var el = e.target;
+      while (el && el !== doc.body) {
+        if (el.getAttribute('role') === 'tab') {
+          setTimeout(function() {
+            var tabs = doc.querySelectorAll('[role="tab"]');
+            for (var i = 0; i < tabs.length; i++) {
+              if (tabs[i].getAttribute('aria-selected') === 'true') {
+                sessionStorage.setItem('lw_tab', i);
+                break;
+              }
+            }
+          }, 80);
+          break;
+        }
+        el = el.parentElement;
+      }
+    }, true);
+  }
+
+  var savedTab = parseInt(sessionStorage.getItem('lw_tab') || '0');
+  var now = Date.now();
+  if (savedTab > 0 && (now - (window.parent.__lwTabTs || 0)) > 900) {
+    window.parent.__lwTabTs = now;
+    setTimeout(function() {
+      var tabs = doc.querySelectorAll('[role="tab"]');
+      if (tabs && tabs[savedTab]) tabs[savedTab].click();
+    }, 250);
+  }
+
   var existing = doc.getElementById('lw-help-fab');
   if (existing) existing.remove();
   var btn = doc.createElement('button');
@@ -1427,7 +2285,7 @@ def main():
   doc.body.appendChild(btn);
 })();
 </script>
-""", height=0)
+""", height=1)
 
     tab_orders, tab_plan, tab_analysis = st.tabs(["Add Orders", "Load Plan", "Analysis"])
     with tab_orders:
