@@ -431,8 +431,11 @@ def render_add_orders(cfg: dict):
     st.divider()
     st.subheader("Upload CSV")
     st.caption(
-        f"Required columns: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})  "
-        f"— optional: `priority`, `notes`"
+        f"Required columns: `order_id`, `customer_name`, `address`, `capacity_units` ({abbr})"
+        f" — optional: `priority`, `notes`"
+    )
+    st.caption(
+        "`customer_name` = business name · `address` = full shipping address (street, city, state, zip code)"
     )
     uploaded = st.file_uploader(
         "Choose file", type=["csv"],
@@ -466,6 +469,10 @@ def render_add_orders(cfg: dict):
 
     st.divider()
     st.subheader("Add in Plain English")
+    st.caption(
+        "Describe a stop in plain English — for any location, include the **business name** and **full shipping address** (street, city, state, zip)."
+    )
+    st.caption(f'e.g. _"Riverside Homes, 450 River Rd Macon GA 31201, 48 {abbr}, gate code 1234"_')
     has_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
     if not has_key:
         st.warning("ANTHROPIC_API_KEY not set — add it to your .env file to enable NL parsing. "
