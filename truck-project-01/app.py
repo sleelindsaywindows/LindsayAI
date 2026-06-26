@@ -1,4 +1,5 @@
 import copy
+import html
 import os
 import time
 import yaml
@@ -1017,9 +1018,41 @@ def render_load_plan(cfg: dict):
                                         hide_index=True,
                                     )
             with c2:
-                st.markdown("**Load Sequence** *(load #1 first — loads deepest into truck)*")
+                st.markdown(
+                    '<div style="font-size:12px;font-weight:800;text-transform:uppercase;'
+                    'letter-spacing:.6px;color:#1a7cb8;margin-bottom:8px;">'
+                    "📦 Load Sequence — Load #1 first (deepest in truck)</div>",
+                    unsafe_allow_html=True,
+                )
                 for i, stop in enumerate(assignment.load_sequence, 1):
-                    st.markdown(f"**Load {i}.** {stop.order.customer_name} — {stop.order.capacity_units:.0f} {abbr}")
+                    route_name = getattr(stop.order, "route_name", None)
+                    if route_name:
+                        route_pill = (
+                            '<span style="font-size:12px;font-weight:700;color:#1a7cb8;'
+                            "background:#eef4fb;border:1px solid #c5ddf5;border-radius:10px;"
+                            f'padding:2px 9px;">{html.escape(route_name)}</span>'
+                        )
+                        row_html = (
+                            '<div style="padding:6px 0;border-bottom:1px solid #f0f4f8;'
+                            'display:flex;align-items:center;gap:8px;">'
+                            f'<span style="font-size:13px;font-weight:800;color:#555;min-width:60px;">Load {i}.</span>'
+                            f'<span style="flex:1;font-size:14px;font-weight:700;color:#1a1a2e;">{html.escape(stop.order.customer_name)}</span>'
+                            f"{route_pill}"
+                            f'<span style="font-size:12px;color:#888;min-width:60px;text-align:right;">'
+                            f"{stop.order.capacity_units:.0f} {abbr}</span>"
+                            "</div>"
+                        )
+                    else:
+                        row_html = (
+                            '<div style="padding:6px 0;border-bottom:1px solid #f0f4f8;'
+                            'display:flex;align-items:center;gap:8px;">'
+                            f'<span style="font-size:13px;font-weight:800;color:#555;min-width:60px;">Load {i}.</span>'
+                            f'<span style="flex:1;font-size:14px;font-weight:700;color:#1a1a2e;">{html.escape(stop.order.customer_name)}</span>'
+                            f'<span style="font-size:12px;color:#888;min-width:60px;text-align:right;">'
+                            f"{stop.order.capacity_units:.0f} {abbr}</span>"
+                            "</div>"
+                        )
+                    st.markdown(row_html, unsafe_allow_html=True)
 
             if FOLIUM_AVAILABLE:
                 stops_with_coords = [s for s in assignment.stops if s.order.lat is not None]
